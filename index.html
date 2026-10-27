@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cadence</title>
+<meta name="description" content="Cadence: food, macros and weight tracker">
+<meta name="theme-color" content="#1F5C45">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Cadence">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="mark" aria-hidden="true">C</span><span>Cadence</span></div>
+  <nav class="tabs" id="tabs" aria-label="Main">
+    <button data-tab="today" class="active"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><span>Today</span></button>
+    <button data-tab="food"><svg viewBox="0 0 24 24"><path d="M7 3v8a2 2 0 0 0 2 2v8M7 3v6M11 3v6M5 3v6M17 21V3c-2 1-3 4-3 8h3"/></svg><span>Food</span></button>
+    <button data-tab="weight"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 3 7-9"/><path d="M4 21h16"/></svg><span>Weight</span></button>
+    <button data-tab="goals"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></button>
+  </nav>
+</header>
+
+<main>
+<!-- TODAY -->
+<section id="view-today" class="view active" aria-label="Today">
+  <h1 class="date" id="today-date"></h1>
+  <div class="card ringcard">
+    <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+      <circle class="ring-bg" cx="60" cy="60" r="50"/>
+      <circle class="ring-fg" id="ring-fg" cx="60" cy="60" r="50"/>
+    </svg>
+    <div class="ring-text">
+      <div class="big" id="kcal-eaten">0</div>
+      <div class="muted">of <span id="kcal-goal">2200</span> kcal</div>
+      <div class="pill" id="kcal-left"></div>
+    </div>
+  </div>
+  <div class="card" id="macro-bars"></div>
+  <div class="card">
+    <div class="card-head"><h2>Today's food</h2><button class="link" data-goto="food">+ Log food</button></div>
+    <ul class="entries" id="today-entries"></ul>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Weight</h2><button class="link" data-goto="weight">+ Log weight</button></div>
+    <div class="weight-mini">
+      <div><div class="big" id="w-latest">&mdash;</div><div class="muted" id="w-latest-sub">No weigh-ins yet</div></div>
+      <div class="spark" id="w-spark"></div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOD -->
+<section id="view-food" class="view" aria-label="Food">
+  <div class="seg" role="tablist">
+    <button class="active" data-sub="log">Log</button>
+    <button data-sub="recipes">Recipes</button>
+  </div>
+
+  <div id="sub-log" class="sub active">
+    <form class="card" id="food-form" autocomplete="off">
+      <label for="food-input" class="lbl">What did you eat?</label>
+      <div class="inputrow">
+        <input id="food-input" type="text" placeholder="e.g. two eggs and toast" enterkeyhint="done">
+        <button type="button" class="mic" id="food-mic" aria-label="Speak what you ate" title="Speak">
+          <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+      </div>
+      <div class="hint" id="mic-status"></div>
+      <div class="preview" id="food-preview"></div>
+      <div class="row">
+        <input id="food-when" type="datetime-local" aria-label="Date and time">
+        <button class="btn" type="submit" id="food-log">Log it</button>
+      </div>
+    </form>
+
+    <div class="card" id="recipe-quick">
+      <label class="lbl" for="rq-select">Log a saved recipe</label>
+      <div class="row">
+        <select id="rq-select"></select>
+        <input id="rq-qty" type="number" min="0.25" step="0.25" value="1" inputmode="decimal" aria-label="Servings" class="qty">
+        <span class="muted">srv</span>
+        <button class="btn" type="button" id="rq-log">Log</button>
+      </div>
+    </div>
+
+    <div id="food-days"></div>
+  </div>
+
+  <div id="sub-recipes" class="sub">
+    <div id="recipe-list-wrap">
+      <button class="btn wide" id="recipe-new" type="button">+ New recipe</button>
+      <div id="recipe-list"></div>
+    </div>
+    <form class="card" id="recipe-editor" hidden autocomplete="off">
+      <h2 id="re-title">New recipe</h2>
+      <label class="lbl" for="re-name">Name</label>
+      <input id="re-name" type="text" placeholder="e.g. Chili" required>
+      <label class="lbl" for="re-servings">Servings this makes</label>
+      <input id="re-servings" type="number" min="1" step="1" value="4" inputmode="numeric" class="qty">
+      <label class="lbl" for="re-ingredients">Ingredients &mdash; one per line</label>
+      <div class="inputrow top">
+        <textarea id="re-ingredients" rows="6" placeholder="2 cups rice&#10;1 lb chicken breast&#10;1 tbsp olive oil"></textarea>
+        <button type="button" class="mic" id="re-mic" aria-label="Speak an ingredient" title="Speak an ingredient">
+          <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+      </div>
+      <div class="hint" id="re-mic-status"></div>
+      <button class="btn ghost wide" type="button" id="re-calc">Look up macros</button>
+      <div id="re-table"></div>
+      <div class="row end">
+        <button class="btn ghost" type="button" id="re-cancel">Cancel</button>
+        <button class="btn" type="submit" id="re-save">Save recipe</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<!-- WEIGHT -->
+<section id="view-weight" class="view" aria-label="Weight">
+  <form class="card" id="weight-form">
+    <label class="lbl">Log body weight</label>
+    <div class="row">
+      <input id="w-date" type="date" aria-label="Date">
+      <input id="w-value" type="number" step="0.1" min="50" max="700" inputmode="decimal" placeholder="lb" aria-label="Weight in pounds" class="qty wide-qty">
+      <button class="btn" type="submit">Add</button>
+    </div>
+  </form>
+  <div class="card">
+    <div class="card-head"><h2>Weight over time</h2><span class="muted" id="w-goal-label"></span></div>
+    <div id="w-chart" class="chart"></div>
+    <div class="stats" id="w-stats"></div>
+  </div>
+  <div class="card">
+    <h2>Entries</h2>
+    <ul class="wlist" id="w-list"></ul>
+  </div>
+</section>
+
+<!-- GOALS -->
+<section id="view-goals" class="view" aria-label="Goals">
+  <form class="card" id="goals-form">
+    <h2>Daily targets</h2>
+    <div class="grid2">
+      <label>Calories (kcal)<input id="g-kcal" type="number" min="0" step="10" inputmode="numeric"></label>
+      <label>Protein (g)<input id="g-p" type="number" min="0" step="1" inputmode="numeric"></label>
+      <label>Carbs (g)<input id="g-c" type="number" min="0" step="1" inputmode="numeric"></label>
+      <label>Fat (g)<input id="g-f" type="number" min="0" step="1" inputmode="numeric"></label>
+    </div>
+    <div class="hint" id="g-check"></div>
+    <h2>Body weight goal</h2>
+    <label>Goal weight (lb)<input id="g-weight" type="number" min="50" max="700" step="0.5" inputmode="decimal"></label>
+    <div class="row end"><button class="btn ghost" type="button" id="g-reset">Reset defaults</button><button class="btn" type="submit">Save goals</button></div>
+    <div class="hint ok" id="g-saved"></div>
+  </form>
+
+  <form class="card" id="settings-form">
+    <h2>Food lookup</h2>
+    <label class="check"><input type="checkbox" id="s-online"> Look up unknown foods online (USDA FoodData Central)</label>
+    <label>Your FDC API key (optional)<input id="s-key" type="text" placeholder="DEMO_KEY is used if empty" autocomplete="off" spellcheck="false"></label>
+    <div class="hint">DEMO_KEY is shared and rate-limited. A free personal key takes a minute at <a href="https://fdc.nal.usda.gov/api-key-signup" target="_blank" rel="noopener">fdc.nal.usda.gov/api-key-signup</a>.</div>
+    <div class="row end"><button class="btn" type="submit">Save</button></div>
+    <div class="hint ok" id="s-saved"></div>
+  </form>
+
+  <div class="card">
+    <h2>Your data</h2>
+    <p class="hint">Everything is saved in this browser only (phone and computer keep separate copies). Use Export / Import to back up or move data.</p>
+    <div class="row wrap">
+      <button class="btn" type="button" id="d-export">Export JSON</button>
+      <button class="btn ghost" type="button" id="d-import">Import JSON</button>
+      <input type="file" id="d-file" accept="application/json,.json" hidden>
+      <button class="btn danger" type="button" id="d-clear">Clear all data</button>
+    </div>
+    <div class="hint" id="d-info"></div>
+  </div>
+  <p class="foot muted">Cadence v1 &middot; nutrition values are estimates based on USDA data</p>
+</section>
+</main>
+
+<dialog id="edit-dialog">
+  <form method="dialog" id="edit-form">
+    <h2>Edit entry</h2>
+    <label class="lbl" for="e-text">What you ate</label>
+    <div class="inputrow"><input id="e-text" type="text"><button type="button" class="btn ghost" id="e-reparse">Re-check</button></div>
+    <label class="lbl" for="e-when">When</label>
+    <input id="e-when" type="datetime-local">
+    <div id="e-items"></div>
+    <button type="button" class="link" id="e-additem">+ Add item</button>
+    <div class="row end">
+      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn" value="save" id="e-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="js/foods.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
