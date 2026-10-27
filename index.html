@@ -25,12 +25,18 @@
     <button data-tab="weight"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 3 7-9"/><path d="M4 21h16"/></svg><span>Weight</span></button>
     <button data-tab="goals"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></button>
   </nav>
+  <button type="button" class="profile-pill" id="profile-pill" aria-haspopup="dialog" aria-controls="profile-dialog" aria-label="Switch profile, current Joseph">
+    <span class="avatar" id="profile-avatar" aria-hidden="true">J</span>
+    <span class="profile-name" id="profile-name">Joseph</span>
+    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
 </header>
 
 <main>
 <!-- TODAY -->
 <section id="view-today" class="view active" aria-label="Today">
   <h1 class="date" id="today-date"></h1>
+  <p class="today-who" id="today-who"></p>
   <div class="card ringcard">
     <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
       <circle class="ring-bg" cx="60" cy="60" r="50"/>
@@ -133,7 +139,7 @@
     </div>
   </form>
   <div class="card">
-    <div class="card-head"><h2>Weight over time</h2><span class="muted" id="w-goal-label"></span></div>
+    <div class="card-head"><h2 id="w-heading">Weight over time</h2><span class="muted" id="w-goal-label"></span></div>
     <div id="w-chart" class="chart"></div>
     <div class="stats" id="w-stats"></div>
   </div>
@@ -146,7 +152,7 @@
 <!-- GOALS -->
 <section id="view-goals" class="view" aria-label="Goals">
   <form class="card" id="goals-form">
-    <h2>Daily targets</h2>
+    <h2 id="goals-heading">Daily targets</h2>
     <div class="grid2">
       <label>Calories (kcal)<input id="g-kcal" type="number" min="0" step="10" inputmode="numeric"></label>
       <label>Protein (g)<input id="g-p" type="number" min="0" step="1" inputmode="numeric"></label>
@@ -160,6 +166,11 @@
     <div class="hint ok" id="g-saved"></div>
   </form>
 
+  <div class="card" id="lock-card">
+    <h2>Profile lock</h2>
+    <div id="lock-card-body"></div>
+  </div>
+
   <form class="card" id="settings-form">
     <h2>Food lookup</h2>
     <label class="check"><input type="checkbox" id="s-online"> Look up unknown foods online (USDA FoodData Central)</label>
@@ -171,7 +182,7 @@
 
   <div class="card">
     <h2>Your data</h2>
-    <p class="hint">Everything is saved in this browser only (phone and computer keep separate copies). Use Export / Import to back up or move data.</p>
+    <p class="hint">Food logs, goals and weights are kept separately for each profile. Recipes and the USDA key are shared. A PIN hides a locked profile on this device and encrypts that profile in this browser. It is not a password against someone with developer tools. Phones do not sync with each other. Export includes a locked profile only after its PIN.</p>
     <div class="row wrap">
       <button class="btn" type="button" id="d-export">Export JSON</button>
       <button class="btn ghost" type="button" id="d-import">Import JSON</button>
@@ -180,7 +191,7 @@
     </div>
     <div class="hint" id="d-info"></div>
   </div>
-  <p class="foot muted">Cadence v1 &middot; nutrition values are estimates based on USDA data</p>
+  <p class="foot muted">Cadence &middot; nutrition values are estimates based on USDA data</p>
 </section>
 </main>
 
@@ -200,10 +211,28 @@
   </form>
 </dialog>
 
+<dialog id="profile-dialog" aria-label="Profiles">
+  <div class="dlg-head">
+    <h2>Profiles</h2>
+    <button type="button" class="iconx" id="profile-close" aria-label="Close">×</button>
+  </div>
+  <p class="hint">Food, weight and goals stay with each person. Recipes are shared.</p>
+  <div id="profile-list"></div>
+  <form id="profile-add-form" class="add-row" autocomplete="off">
+    <input id="profile-new-name" type="text" maxlength="24" placeholder="New name" aria-label="New profile name">
+    <button class="btn" type="submit">Add</button>
+  </form>
+</dialog>
+
+<dialog id="gate-dialog" class="gate" aria-label="Profile lock">
+  <div id="gate-root"></div>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="js/foods.js"></script>
 <script src="js/parser.js"></script>
+<script src="js/lock.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

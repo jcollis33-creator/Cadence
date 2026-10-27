@@ -1,8 +1,8 @@
 /* Cadence service worker: caches the app shell for offline use.
  * Bump VERSION whenever any shell file changes so phones pick up the update. */
-var VERSION = "1.0.0";
+var VERSION = "2.0.0";
 var CACHE = "cadence-shell-v" + VERSION;
-var SHELL = ["./", "index.html", "css/app.css", "js/foods.js", "js/parser.js", "js/app.js", "manifest.webmanifest",
+var SHELL = ["./", "index.html", "css/app.css", "js/foods.js", "js/parser.js", "js/lock.js", "js/app.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png"];
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));

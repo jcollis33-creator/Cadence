@@ -27,6 +27,33 @@ Cadence is a private food, macro and weight tracker. It's plain HTML, CSS and Ja
   - The line chart shows a dashed line at your goal weight, and there are stats for latest weight, change, and pounds to goal.
 - **Goals:** daily calories and P/C/F (defaults 2200 / 180 / 220 / 70) and goal weight (default 180 lb). Also here: the online lookup toggle, your USDA API key, and Export / Import / Clear.
 
+## Profiles
+
+The header shows who is logging: a small avatar and name. Tap it to switch, add, rename, or remove a profile. Joseph, Cindy, and Leo are already there. Joseph is the default, and the last person you opened is remembered in this browser.
+
+Food logs, daily goals (calories, protein, carbs, fat, and goal weight), and weigh-ins belong to the active profile. Today, Food, Weight, and Goals show only that person's numbers. Recipes are a shared household library. Logging a serving writes into the active profile's food log. The USDA API key and the online-lookup switch stay global.
+
+An older `cadence.v1` save is copied into Joseph's profile the first time this version loads. Nothing is dropped. The `cadence.v1` key is left in place as a backup. The working copy is `cadence.v2`: `{ version, activeProfileId, profiles: [{ id, name, color, foods, weights, goals, lock }], recipes, settings }`.
+
+Removing a profile asks first. Removing Joseph names the entries that would be deleted.
+
+Data is still **per device**. Cindy's log on Joseph's phone is not on Cindy's phone. Use Export / Import to move a copy. A full backup includes every profile. An older v1 file imports into the profile that is open.
+
+## Profile PIN
+
+Cindy starts locked. Joseph and Leo do not. Any profile can be locked from the profile switcher with **Lock with PIN**.
+
+The first time someone opens Cindy, Cadence asks for a 4–6 digit PIN, entered twice, then shows a one-time 8-character recovery code. Write that code down. Only a salted PBKDF2 hash is kept (the PIN wraps a random key; the PIN itself is not stored). Her food log, goals, and weights are encrypted at rest with AES-GCM. The screen does not show her entries until the PIN is accepted. A wrong PIN shows an error. After five wrong tries the pad waits 30 seconds.
+
+The lock closes when you switch to someone else, when the page is reloaded or reopened, and after about five minutes idle or in the background. If Cindy was the last person open, the next launch starts on Joseph and asks for her PIN to go back.
+
+- **Change PIN:** open her profile, go to **Goals**, and under **Profile lock** enter the current PIN, then the new one twice.
+- **Forgot PIN:** on the PIN pad choose **Forgot PIN** and enter the recovery code. Her log is kept and you set a new PIN. Without the code, **Reset profile** erases that profile's food, weight, and goals after you type the profile name. There is no control that turns the lock off and leaves her log visible without the PIN or the recovery code.
+- **Turn off the lock or delete her profile:** both ask for her PIN.
+- **Export:** a backup includes a locked profile only after that PIN is entered. Otherwise Cadence leaves that profile out and says so. What is included is ciphertext, the same shape as in this browser.
+
+This is a casual privacy lock for a shared phone, not real security. The PIN is short, and anyone who can open developer tools or copy this browser's `localStorage` can attack it offline. Encryption stops a casual glance at the saved JSON. It does not stop someone with the device and enough time.
+
 ## How nutrition lookup works
 
 1. The parser splits phrases on commas, "and", "with", "plus" and similar words. It keeps dishes such as "mac and cheese", "PB&J" and "coffee with milk" together.
@@ -57,9 +84,9 @@ When the mic button does work, Cadence logs the item as soon as you stop speakin
 
 ## Your data
 
-- Everything is saved in your browser's `localStorage` under the key `cadence.v1`. The format is `{ foods, weights, goals, settings, recipes }`.
-- Data is **per device and per browser**. Your phone and laptop don't sync. Clearing site data or private browsing erases it, and the file:// copy and the https:// copy of Cadence don't share data.
-- Use **Goals › Export JSON** to make a backup or move devices, then **Import JSON** on the other device. Importing replaces what's there.
+- Everything is saved in your browser's `localStorage` under the key `cadence.v2` (see Profiles). A previous `cadence.v1` value is kept as a backup and is not deleted.
+- Data is **per device and per browser**. Your phone and laptop don't sync. Cindy's log on Joseph's phone is not on Cindy's phone. Clearing site data or private browsing erases it, and the file:// copy and the https:// copy of Cadence don't share data.
+- Use **Goals › Export JSON** to make a backup or move devices, then **Import JSON** on the other device. A v2 import replaces profiles (profiles left out of a partial export are kept if they are still on this device). A v1 import replaces the open profile's food, weight, and goals, plus the shared recipes and settings.
 
 ## Put it on your phone
 
@@ -94,7 +121,8 @@ index.html             app shell (tabs, forms, dialog)
 css/app.css            styles (paper #F3F1EC, ink #1C1B19, forest #1F5C45)
 js/foods.js            built-in food list (~240 foods)
 js/parser.js           phrase parser, food/recipe matching, USDA lookup
-js/app.js              UI, storage, charts, recipes, export/import
+js/lock.js             PIN key wrapping (PBKDF2) and AES-GCM sealing
+js/app.js              UI, profiles, storage, charts, recipes, export/import
 manifest.webmanifest   PWA manifest
 sw.js                  service worker (offline app shell cache)
 icons/                 app icons (192, 512, maskable 512, apple-touch 180, favicon)

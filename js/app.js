@@ -1,34 +1,257 @@
-/* Cadence v1 app logic. Plain JS, no dependencies. */
+/* Cadence app logic. Plain JS, no dependencies.
+ * Profiles live in localStorage key cadence.v2. cadence.v1 is kept as a backup. */
 (function () {
 "use strict";
 var P = window.CadenceParser, FOODS = window.CADENCE_FOODS, INDEX = P.buildIndex(FOODS);
-var KEY = "cadence.v1";
+var KEY = "cadence.v2";
+var KEY_V1 = "cadence.v1";
 var DEFAULT_GOALS = { kcal: 2200, p: 180, c: 220, f: 70, weight: 180 };
 var DEFAULT_SETTINGS = { fdcKey: "", online: true };
+var PALETTE = ["#1F5C45", "#1C1B19", "#2E7A5E", "#A4471F", "#7A5A8C", "#B07D2B"];
+var IDLE_MS = 5 * 60 * 1000;
+var COOLDOWN_MS = 30 * 1000;
+var FAIL_LIMIT = 5;
+var LOCKOUT_KEY = "cadence.lockout";
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
 /* ---------------- storage ---------------- */
-function blank() { return { version: 1, foods: [], weights: [], recipes: [], goals: Object.assign({}, DEFAULT_GOALS), settings: Object.assign({}, DEFAULT_SETTINGS) }; }
-function sanitize(d) {
-  var b = blank();
-  if (!d || typeof d !== "object") return b;
-  b.foods = Array.isArray(d.foods) ? d.foods.filter(function (e) { return e && e.ts && Array.isArray(e.items); }) : [];
-  b.weights = Array.isArray(d.weights) ? d.weights.filter(function (w) { return w && w.date && +w.lb > 0; }) : [];
-  b.recipes = Array.isArray(d.recipes) ? d.recipes.filter(function (r) { return r && r.name; }) : [];
-  b.goals = Object.assign({}, DEFAULT_GOALS, d.goals || {});
-  b.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
-  return b;
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function copyGoals(g) {
+  var o = { kcal: DEFAULT_GOALS.kcal, p: DEFAULT_GOALS.p, c: DEFAULT_GOALS.c, f: DEFAULT_GOALS.f, weight: DEFAULT_GOALS.weight };
+  if (g && typeof g === "object") ["kcal", "p", "c", "f", "weight"].forEach(function (k) {
+    if (g[k] != null && g[k] !== "" && !isNaN(+g[k]) && +g[k] >= 0) o[k] = +g[k];
+  });
+  return o;
 }
-function load() { try { return sanitize(JSON.parse(localStorage.getItem(KEY) || "null")); } catch (e) { return blank(); } }
+function copySettings(s) {
+  var o = { fdcKey: "", online: true };
+  if (s && typeof s === "object") {
+    if ("online" in s) o.online = !!s.online;
+    if (s.fdcKey != null) o.fdcKey = String(s.fdcKey);
+  }
+  return o;
+}
+function copyFoods(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(function (e) { return e && e.ts && Array.isArray(e.items); }).map(function (e) { return JSON.parse(JSON.stringify(e)); });
+}
+function copyWeights(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(function (w) { return w && w.date && +w.lb > 0; }).map(function (w) {
+    return { id: w.id || uid(), date: String(w.date).slice(0, 10), lb: +w.lb };
+  });
+}
+function makeProfile(id, name, color, extra) {
+  extra = extra || {};
+  return { id: id, name: name, color: color, foods: copyFoods(extra.foods), weights: copyWeights(extra.weights), goals: copyGoals(extra.goals), lock: extra.lock || null };
+}
+function blankV2() {
+  return {
+    version: 2,
+    activeProfileId: "joseph",
+    profiles: [
+      makeProfile("joseph", "Joseph", "#1F5C45"),
+      makeProfile("cindy", "Cindy", "#1C1B19", { lock: { enabled: true, pending: true } }),
+      makeProfile("leo", "Leo", "#2E7A5E")
+    ],
+    recipes: [],
+    settings: copySettings(null)
+  };
+}
+function wrapOk(w) { return !!(w && typeof w.iv === "string" && typeof w.ct === "string" && w.iv && w.ct); }
+function sanitizeLock(lock) {
+  if (!lock || typeof lock !== "object" || !lock.enabled) return null;
+  if (lock.pending) return { enabled: true, pending: true };
+  var iters = +lock.iterations || 100000;
+  if (!wrapOk(lock.pinWrap) || !wrapOk(lock.recoveryWrap) || !lock.pinSalt || !lock.recoverySalt || !(iters >= 10000 && iters <= 500000)) {
+    if (wrapOk(lock.sealed)) return { enabled: true, pending: false, damaged: true, sealed: { iv: String(lock.sealed.iv), ct: String(lock.sealed.ct) } };
+    return null;
+  }
+  var o = {
+    enabled: true, pending: false, kdf: "PBKDF2-SHA-256", iterations: iters,
+    pinSalt: String(lock.pinSalt), recoverySalt: String(lock.recoverySalt),
+    pinWrap: { iv: String(lock.pinWrap.iv), ct: String(lock.pinWrap.ct) },
+    recoveryWrap: { iv: String(lock.recoveryWrap.iv), ct: String(lock.recoveryWrap.ct) },
+    sealed: null
+  };
+  if (wrapOk(lock.sealed)) o.sealed = { iv: String(lock.sealed.iv), ct: String(lock.sealed.ct) };
+  return o;
+}
+function profileFromStored(p, i) {
+  var id = String(p.id || uid());
+  var name = String(p.name || "Profile").trim().slice(0, 24) || "Profile";
+  var color = /^#[0-9A-Fa-f]{6}$/.test(String(p.color || "")) ? String(p.color) : PALETTE[i % PALETTE.length];
+  var lock = sanitizeLock(p.lock);
+  var sealedOn = !!(lock && lock.enabled && !lock.pending);
+  return {
+    id: id, name: name, color: color, lock: lock,
+    foods: sealedOn ? [] : copyFoods(p.foods),
+    weights: sealedOn ? [] : copyWeights(p.weights),
+    goals: sealedOn ? copyGoals(null) : copyGoals(p.goals)
+  };
+}
+function sanitizeV2(d) {
+  var profiles = [], seen = {};
+  (Array.isArray(d.profiles) ? d.profiles : []).forEach(function (p, i) {
+    if (!p || typeof p !== "object") return;
+    var row = profileFromStored(p, i);
+    while (seen[row.id]) row.id = uid();
+    seen[row.id] = 1;
+    profiles.push(row);
+  });
+  if (!profiles.length) return blankV2();
+  var active = profiles.some(function (p) { return p.id === d.activeProfileId; }) ? d.activeProfileId : profiles[0].id;
+  return {
+    version: 2,
+    activeProfileId: active,
+    profiles: profiles,
+    recipes: Array.isArray(d.recipes) ? d.recipes.filter(function (r) { return r && r.name; }) : [],
+    settings: copySettings(d.settings)
+  };
+}
+function migrateV1(d) {
+  var s = blankV2();
+  s.profiles[0].foods = copyFoods(d.foods);
+  s.profiles[0].weights = copyWeights(d.weights);
+  s.profiles[0].goals = copyGoals(d.goals);
+  s.recipes = Array.isArray(d.recipes) ? d.recipes.filter(function (r) { return r && r.name; }) : [];
+  s.settings = copySettings(d.settings);
+  s.activeProfileId = "joseph";
+  return s;
+}
+function toStored(s) {
+  return {
+    version: 2,
+    activeProfileId: s.activeProfileId,
+    profiles: s.profiles.map(function (p) {
+      if (p.lock && p.lock.enabled && !p.lock.pending) return { id: p.id, name: p.name, color: p.color, lock: p.lock };
+      var o = { id: p.id, name: p.name, color: p.color, foods: p.foods, weights: p.weights, goals: p.goals };
+      if (p.lock) o.lock = p.lock;
+      return o;
+    }),
+    recipes: s.recipes,
+    settings: s.settings
+  };
+}
+function load() {
+  var raw = null;
+  try { raw = localStorage.getItem(KEY); } catch (e) { return blankV2(); }
+  if (raw) {
+    try {
+      var parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") return sanitizeV2(parsed);
+    } catch (e) {}
+    return blankV2();
+  }
+  var v1 = null;
+  try {
+    var v1raw = localStorage.getItem(KEY_V1);
+    if (v1raw) v1 = JSON.parse(v1raw);
+  } catch (e1) { v1 = null; }
+  var s = (v1 && typeof v1 === "object") ? migrateV1(v1) : blankV2();
+  try { localStorage.setItem(KEY, JSON.stringify(toStored(s))); } catch (e2) {}
+  return s;
+}
 var state = load();
+var session = { viewId: state.activeProfileId };
+var sessionKeys = {};
+var saveChain = Promise.resolve();
+var fails = {};
+try { fails = JSON.parse(sessionStorage.getItem(LOCKOUT_KEY) || "{}") || {}; } catch (e) { fails = {}; }
+if (!fails || typeof fails !== "object") fails = {};
+
+function profileById(id) {
+  for (var i = 0; i < state.profiles.length; i++) if (state.profiles[i].id === id) return state.profiles[i];
+  return null;
+}
+function hasKey(id) { return !!(id && Object.prototype.hasOwnProperty.call(sessionKeys, id) && sessionKeys[id]); }
+function canView(p) {
+  if (!p) return false;
+  if (!p.lock || !p.lock.enabled) return true;
+  if (p.lock.pending || p.lock.damaged) return false;
+  return hasKey(p.id);
+}
+function fallbackProfileId() {
+  var j = profileById("joseph");
+  if (j && canView(j)) return j.id;
+  for (var i = 0; i < state.profiles.length; i++) if (canView(state.profiles[i])) return state.profiles[i].id;
+  return state.profiles[0] ? state.profiles[0].id : "joseph";
+}
+function current() {
+  var p = profileById(session.viewId);
+  if (!canView(p)) { session.viewId = fallbackProfileId(); p = profileById(session.viewId); }
+  return p;
+}
+if (!canView(profileById(session.viewId))) session.viewId = fallbackProfileId();
+
+function snapshot() {
+  return {
+    activeProfileId: state.activeProfileId,
+    recipes: JSON.parse(JSON.stringify(state.recipes || [])),
+    settings: JSON.parse(JSON.stringify(state.settings || {})),
+    profiles: state.profiles.map(function (p) {
+      return {
+        id: p.id, name: p.name, color: p.color,
+        foods: JSON.parse(JSON.stringify(p.foods || [])),
+        weights: JSON.parse(JSON.stringify(p.weights || [])),
+        goals: copyGoals(p.goals),
+        lock: p.lock ? JSON.parse(JSON.stringify(p.lock)) : null,
+        open: hasKey(p.id),
+        key: hasKey(p.id) ? sessionKeys[p.id] : null
+      };
+    })
+  };
+}
+function writeSnap(snap) {
+  return Promise.all(snap.profiles.map(function (p) {
+    if (p.lock && p.lock.enabled && !p.lock.pending) {
+      var task = (p.open && p.key)
+        ? window.CadenceLock.seal(p.key, { foods: p.foods, weights: p.weights, goals: p.goals })
+        : Promise.resolve(p.lock.sealed || null);
+      return task.then(function (sealed) {
+        var lock = JSON.parse(JSON.stringify(p.lock));
+        if (sealed) lock.sealed = sealed;
+        var live = profileById(p.id);
+        if (live && live.lock && sealed) live.lock.sealed = sealed;
+        return { id: p.id, name: p.name, color: p.color, lock: lock };
+      });
+    }
+    var o = { id: p.id, name: p.name, color: p.color, foods: p.foods, weights: p.weights, goals: p.goals };
+    if (p.lock) o.lock = p.lock;
+    return o;
+  })).then(function (profiles) {
+    localStorage.setItem(KEY, JSON.stringify({
+      version: 2, activeProfileId: snap.activeProfileId, profiles: profiles, recipes: snap.recipes, settings: snap.settings
+    }));
+  });
+}
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(state)); }
-  catch (e) { toast("Could not save: storage is full or blocked"); }
+  var snap = snapshot();
+  var run = saveChain.then(function () { return writeSnap(snap); });
+  saveChain = run.catch(function (e) { toast("Could not save: " + (e && e.message ? e.message : "storage is full or blocked")); });
+  return run;
+}
+function lockProfile(id) {
+  var p = profileById(id);
+  if (!p || !hasKey(id)) return save();
+  var queued = save();
+  saveChain = queued.then(function () {
+    delete sessionKeys[id];
+    p.foods = [];
+    p.weights = [];
+    p.goals = copyGoals(null);
+  }, function () {});
+  return saveChain;
+}
+function applyOpened(p, dek, data) {
+  sessionKeys[p.id] = dek;
+  p.foods = copyFoods(data && data.foods);
+  p.weights = copyWeights(data && data.weights);
+  p.goals = copyGoals(data && data.goals);
 }
 
 /* ---------------- utils ---------------- */
-function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function pad(n) { return (n < 10 ? "0" : "") + n; }
 function dayKey(d) { d = new Date(d); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
 function todayKey() { return dayKey(new Date()); }
@@ -45,10 +268,14 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function
 function n1(x) { return (Math.round((+x || 0) * 10) / 10).toString(); }
 function n0(x) { return Math.round(+x || 0).toString(); }
 function macroLine(t) { return n0(t.kcal) + " kcal \u00b7 P " + n0(t.p) + " \u00b7 C " + n0(t.c) + " \u00b7 F " + n0(t.f); }
+function initial(name) { var s = String(name || "").trim(); return s ? s.charAt(0).toUpperCase() : "?"; }
 var toastTimer;
-function toast(msg) { var t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2600); }
+function toast(msg) { var t = $("#toast"); if (!t) return; t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2600); }
 function entryTotals(e) { return P.totals(e.items); }
-function dayTotals(k) { return P.totals([].concat.apply([], state.foods.filter(function (e) { return dayKey(e.ts) === k; }).map(function (e) { return e.items; }))); }
+function dayTotals(k) {
+  var foods = current().foods;
+  return P.totals([].concat.apply([], foods.filter(function (e) { return dayKey(e.ts) === k; }).map(function (e) { return e.items; })));
+}
 
 /* ---------------- tabs ---------------- */
 function showTab(name) {
@@ -148,11 +375,14 @@ function resetWhen() { $("#food-when").value = toLocalInput(new Date()); }
 function logFood(text, when) {
   text = (text || "").trim();
   if (!text) { toast("Type or say what you ate"); return Promise.resolve(null); }
+  var pid = current().id;
   var btn = $("#food-log"); btn.disabled = true; btn.textContent = "Looking up\u2026";
   var items = itemsFromText(text);
   return enrichOnline(items).then(function (r) {
+    var dest = profileById(pid);
+    if (!dest || !canView(dest)) { toast("That profile is locked"); return null; }
     var entry = { id: uid(), ts: (when || new Date()).toISOString(), text: text, items: r.items.map(cleanItem) };
-    state.foods.push(entry); save();
+    dest.foods.push(entry); save();
     foodInput.value = ""; renderPreview(); resetWhen(); renderAll();
     var t = entryTotals(entry), miss = entry.items.filter(function (i) { return !i.matched; });
     toast("Logged " + n0(t.kcal) + " kcal" + (miss.length ? " \u2014 add macros for " + miss.length + " item(s)" : ""));
@@ -168,11 +398,13 @@ setupMic($("#food-mic"), $("#mic-status"), function (t) { foodInput.value = t; r
 function logRecipe(id, qty, when) {
   var r = state.recipes.filter(function (x) { return x.id === id; })[0];
   qty = +qty || 1; if (!r) return null;
+  var dest = current();
+  if (!canView(dest)) { toast("That profile is locked"); return null; }
   var ps = r.perServing || { kcal: 0, p: 0, c: 0, f: 0 };
   var label = r.name + " (" + n1(qty) + (qty === 1 ? " serving)" : " servings)");
   var entry = { id: uid(), ts: (when || new Date()).toISOString(), text: label, items: [{ text: label, qty: qty, unit: "serving", food: label, source: "recipe",
     recipeId: r.id, matched: true, kcal: Math.round(ps.kcal * qty), p: P.round1(ps.p * qty), c: P.round1(ps.c * qty), f: P.round1(ps.f * qty) }] };
-  state.foods.push(entry); save(); renderAll(); toast("Logged " + label + " \u2014 " + n0(entry.items[0].kcal) + " kcal");
+  dest.foods.push(entry); save(); renderAll(); toast("Logged " + label + " \u2014 " + n0(entry.items[0].kcal) + " kcal");
   return entry;
 }
 $("#rq-log").addEventListener("click", function () { var id = $("#rq-select").value; if (id) logRecipe(id, $("#rq-qty").value, fromLocalInput($("#food-when").value)); });
@@ -186,8 +418,9 @@ function entryHTML(e, compact) {
     }).join("") + '</ul><div class="acts"><button data-act="edit">Edit</button><button data-act="del" class="del">Delete</button></div></div>';
 }
 function renderFood() {
+  var foods = current().foods;
   var byDay = {};
-  state.foods.forEach(function (e) { (byDay[dayKey(e.ts)] = byDay[dayKey(e.ts)] || []).push(e); });
+  foods.forEach(function (e) { (byDay[dayKey(e.ts)] = byDay[dayKey(e.ts)] || []).push(e); });
   var days = Object.keys(byDay).sort().reverse();
   var html = days.length ? "" : '<div class="card"><div class="empty">No food logged yet. Try typing \u201ctwo eggs and toast\u201d.</div></div>';
   days.slice(0, 60).forEach(function (k) {
@@ -204,12 +437,13 @@ function renderFood() {
 $("#food-days").addEventListener("click", function (ev) {
   var b = ev.target.closest("button[data-act]"); if (!b) return;
   var id = b.closest(".entry").dataset.id;
-  if (b.dataset.act === "del") { if (confirm("Delete this entry?")) { state.foods = state.foods.filter(function (e) { return e.id !== id; }); save(); renderAll(); } }
+  var prof = current();
+  if (b.dataset.act === "del") { if (confirm("Delete this entry?")) { prof.foods = prof.foods.filter(function (e) { return e.id !== id; }); save(); renderAll(); } }
   else openEditor(id);
 });
 
 /* ---------------- edit dialog ---------------- */
-var dlg = $("#edit-dialog"), editing = null;
+var dlg = $("#edit-dialog"), editing = null, editingProfileId = null;
 function itemRow(i) {
   return '<div class="eitem"><input class="e-name" value="' + esc(i.food) + '" aria-label="Item">' +
     ["kcal", "p", "c", "f"].map(function (k) { return '<input class="e-' + k + '" type="number" step="any" min="0" inputmode="decimal" value="' + (k === "kcal" ? n0(i[k]) : n1(i[k])) + '" aria-label="' + k + '">'; }).join("") +
@@ -230,8 +464,10 @@ function readEditItems() {
   });
 }
 function openEditor(id) {
-  var e = state.foods.filter(function (x) { return x.id === id; })[0]; if (!e) return;
+  var prof = current();
+  var e = prof.foods.filter(function (x) { return x.id === id; })[0]; if (!e) return;
   editing = JSON.parse(JSON.stringify(e));
+  editingProfileId = prof.id;
   $("#e-text").value = e.text; $("#e-when").value = toLocalInput(e.ts);
   renderEditItems(editing.items);
   if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "");
@@ -251,9 +487,11 @@ $("#e-reparse").addEventListener("click", function () {
 $("#edit-form").addEventListener("submit", function (ev) {
   if (ev.submitter && ev.submitter.value !== "save") { editing = null; return; }
   var items = readEditItems().filter(function (i) { return i.food; });
-  var idx = state.foods.findIndex(function (x) { return x.id === editing.id; });
+  var prof = profileById(editingProfileId);
+  if (!prof || !canView(prof)) { toast("That profile is locked"); editing = null; return; }
+  var idx = prof.foods.findIndex(function (x) { return x.id === editing.id; });
   if (idx >= 0) {
-    state.foods[idx] = Object.assign(state.foods[idx], { text: $("#e-text").value.trim() || state.foods[idx].text, ts: fromLocalInput($("#e-when").value).toISOString(), items: items.map(cleanItem) });
+    prof.foods[idx] = Object.assign(prof.foods[idx], { text: $("#e-text").value.trim() || prof.foods[idx].text, ts: fromLocalInput($("#e-when").value).toISOString(), items: items.map(cleanItem) });
     save(); renderAll(); toast("Entry updated");
   }
   editing = null;
@@ -265,15 +503,16 @@ function bar(label, val, goal, color, unit) {
   return '<div class="bar"><div class="bar-top"><span><b>' + label + '</b></span><span>' + n0(val) + " / " + n0(goal) + " " + unit + '</span></div><div class="track"><div class="fill" style="width:' + pct.toFixed(1) + "%;background:" + (val > goal * 1.05 ? "var(--warn)" : color) + '"></div></div></div>';
 }
 function renderToday() {
-  var g = state.goals, t = dayTotals(todayKey());
+  var prof = current(), g = prof.goals, t = dayTotals(todayKey());
   $("#today-date").textContent = new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  $("#today-who").textContent = prof.name;
   $("#kcal-eaten").textContent = n0(t.kcal); $("#kcal-goal").textContent = n0(g.kcal);
   var left = g.kcal - t.kcal, pill = $("#kcal-left");
   pill.textContent = left >= 0 ? n0(left) + " kcal left" : n0(-left) + " kcal over"; pill.classList.toggle("over", left < 0);
   var C = 2 * Math.PI * 50, frac = g.kcal > 0 ? Math.min(1, t.kcal / g.kcal) : 0, fg = $("#ring-fg");
   fg.style.strokeDasharray = C.toFixed(2); fg.style.strokeDashoffset = (C * (1 - frac)).toFixed(2); fg.classList.toggle("over", left < 0);
   $("#macro-bars").innerHTML = bar("Protein", t.p, g.p, "var(--p)", "g") + bar("Carbs", t.c, g.c, "var(--c)", "g") + bar("Fat", t.f, g.f, "var(--f)", "g");
-  var list = state.foods.filter(function (e) { return dayKey(e.ts) === todayKey(); }).sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
+  var list = prof.foods.filter(function (e) { return dayKey(e.ts) === todayKey(); }).sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
   $("#today-entries").innerHTML = list.length ? list.map(function (e) { return entryHTML(e, true); }).join("") : '<li class="empty">Nothing logged yet today.</li>';
   var ws = sortedWeights();
   if (ws.length) {
@@ -286,7 +525,7 @@ function renderToday() {
 }
 
 /* ---------------- weight ---------------- */
-function sortedWeights() { return state.weights.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }); }
+function sortedWeights() { return current().weights.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }); }
 function weightChart(ws, goal, mini) {
   var W = mini ? 200 : 640, H = mini ? 54 : 300, pl = mini ? 2 : 44, pr = mini ? 2 : 14, pt = mini ? 4 : 14, pb = mini ? 4 : 30;
   if (!ws.length) return mini ? "" : '<div class="empty">Log a weigh-in to see the chart.</div>';
@@ -311,7 +550,8 @@ function weightChart(ws, goal, mini) {
   return s + "</svg>";
 }
 function renderWeight() {
-  var ws = sortedWeights(), g = state.goals.weight;
+  var prof = current(), ws = sortedWeights(), g = prof.goals.weight;
+  $("#w-heading").textContent = prof.name + "'s weight";
   $("#w-goal-label").textContent = "Goal " + n1(g) + " lb";
   $("#w-chart").innerHTML = weightChart(ws, g, false);
   if (ws.length) {
@@ -322,20 +562,23 @@ function renderWeight() {
 }
 $("#weight-form").addEventListener("submit", function (e) {
   e.preventDefault();
+  var prof = current();
+  if (!canView(prof)) { toast("That profile is locked"); return; }
   var d = $("#w-date").value || todayKey(), v = parseFloat($("#w-value").value);
   if (!(v > 0)) { toast("Enter your weight in lb"); return; }
-  var ex = state.weights.filter(function (w) { return w.date === d; })[0];
+  var ex = prof.weights.filter(function (w) { return w.date === d; })[0];
   if (ex) { ex.lb = v; toast("Updated " + fmtShort(d) + " to " + n1(v) + " lb"); }
-  else { state.weights.push({ id: uid(), date: d, lb: v }); toast("Logged " + n1(v) + " lb"); }
+  else { prof.weights.push({ id: uid(), date: d, lb: v }); toast("Logged " + n1(v) + " lb"); }
   save(); $("#w-value").value = ""; renderAll();
 });
 $("#w-list").addEventListener("click", function (e) {
   var b = e.target.closest("button[data-id]"); if (!b) return;
-  if (confirm("Delete this weigh-in?")) { state.weights = state.weights.filter(function (w) { return w.id !== b.dataset.id; }); save(); renderAll(); }
+  var prof = current();
+  if (confirm("Delete this weigh-in?")) { prof.weights = prof.weights.filter(function (w) { return w.id !== b.dataset.id; }); save(); renderAll(); }
 });
 
-/* ---------------- recipes ---------------- */
-var rEdit = null; // {id, rows:[item]}
+/* ---------------- recipes (shared) ---------------- */
+var rEdit = null;
 function recipeTotals(rows) { return P.totals(rows); }
 function perServing(t, s) { s = Math.max(1, +s || 1); return { kcal: Math.round(t.kcal / s), p: P.round1(t.p / s), c: P.round1(t.c / s), f: P.round1(t.f / s) }; }
 function renderRecipeList() {
@@ -399,8 +642,8 @@ $("#recipe-editor").addEventListener("submit", function (e) {
   e.preventDefault();
   var name = $("#re-name").value.trim(); if (!name) { toast("Give the recipe a name"); return; }
   var lines = $("#re-ingredients").value.split(/\n+/).map(function (l) { return l.replace(/^\s*[-*\u2022]\s*/, "").trim(); }).filter(Boolean);
-  var current = rEdit.rows.map(function (r) { return r.text; }).join("\n");
-  var go = current === lines.join("\n") ? Promise.resolve() : calcRecipe();
+  var currentText = rEdit.rows.map(function (r) { return r.text; }).join("\n");
+  var go = currentText === lines.join("\n") ? Promise.resolve() : calcRecipe();
   go.then(function () {
     if (!rEdit.rows.length) { toast("Add at least one ingredient"); return; }
     var servings = Math.max(1, +$("#re-servings").value || 1), t = recipeTotals(rEdit.rows);
@@ -412,9 +655,10 @@ $("#recipe-editor").addEventListener("submit", function (e) {
   });
 });
 
-/* ---------------- goals & settings ---------------- */
+/* ---------------- goals, settings, data ---------------- */
 function fillGoals() {
-  var g = state.goals;
+  var g = current().goals;
+  $("#goals-heading").textContent = current().name + "'s daily targets";
   $("#g-kcal").value = g.kcal; $("#g-p").value = g.p; $("#g-c").value = g.c; $("#g-f").value = g.f; $("#g-weight").value = g.weight;
   $("#s-online").checked = !!state.settings.online; $("#s-key").value = state.settings.fdcKey || "";
   checkGoals();
@@ -426,53 +670,712 @@ function checkGoals() {
 ["#g-kcal", "#g-p", "#g-c", "#g-f"].forEach(function (s) { $(s).addEventListener("input", checkGoals); });
 $("#goals-form").addEventListener("submit", function (e) {
   e.preventDefault();
-  ["kcal", "p", "c", "f", "weight"].forEach(function (k) { var v = parseFloat($("#g-" + k).value); if (v >= 0) state.goals[k] = v; });
-  save(); renderAll(); $("#g-saved").textContent = "Saved."; setTimeout(function () { $("#g-saved").textContent = ""; }, 2000);
+  var prof = current();
+  ["kcal", "p", "c", "f", "weight"].forEach(function (k) { var v = parseFloat($("#g-" + k).value); if (v >= 0) prof.goals[k] = v; });
+  save(); renderAll(); $("#g-saved").textContent = "Saved for " + prof.name + "."; setTimeout(function () { $("#g-saved").textContent = ""; }, 2000);
 });
-$("#g-reset").addEventListener("click", function () { state.goals = Object.assign({}, DEFAULT_GOALS); save(); fillGoals(); renderAll(); toast("Goals reset to defaults"); });
+$("#g-reset").addEventListener("click", function () {
+  current().goals = copyGoals(null); save(); fillGoals(); renderAll(); toast("Goals reset to defaults");
+});
 $("#settings-form").addEventListener("submit", function (e) {
   e.preventDefault(); state.settings.online = $("#s-online").checked; state.settings.fdcKey = $("#s-key").value.trim(); save();
   $("#s-saved").textContent = "Saved."; setTimeout(function () { $("#s-saved").textContent = ""; }, 2000);
 });
-$("#d-export").addEventListener("click", function () {
-  var data = Object.assign({ exportedAt: new Date().toISOString(), app: "Cadence" }, state);
-  var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "cadence-backup-" + todayKey() + ".json";
-  document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  toast("Exported backup");
-});
+function looksLikeV2(d) { return !!(d && typeof d === "object" && (d.version >= 2 || Array.isArray(d.profiles))); }
+function importData(d) {
+  if (looksLikeV2(d)) return importV2(d);
+  if (!d || typeof d !== "object" || (!Array.isArray(d.foods) && !Array.isArray(d.weights) && !Array.isArray(d.recipes) && !d.goals)) throw new Error("Not a Cadence backup");
+  var prof = current();
+  if (!canView(prof)) throw new Error("Unlock a profile before importing into it");
+  var foods = copyFoods(d.foods), weights = copyWeights(d.weights);
+  var goals = d.goals ? copyGoals(d.goals) : copyGoals(prof.goals);
+  var recipes = Array.isArray(d.recipes) ? d.recipes.filter(function (r) { return r && r.name; }) : state.recipes;
+  var settings = d.settings ? copySettings(d.settings) : state.settings;
+  if (!confirm("Import this older backup into " + prof.name + "'s profile? " + prof.name + "'s food log, weights and goals will be replaced (" + foods.length + " food entries, " + weights.length + " weigh-ins). Shared recipes (" + recipes.length + ") and settings will be replaced. Other profiles stay as they are.")) return;
+  prof.foods = foods; prof.weights = weights; prof.goals = goals; state.recipes = recipes; state.settings = settings;
+  save(); fillGoals(); renderAll(); toast("Imported into " + prof.name);
+}
+function importV2(d) {
+  var omitted = Array.isArray(d.omittedProfiles) ? d.omittedProfiles : [];
+  var prep = Promise.resolve();
+  omitted.forEach(function (o) { if (o && hasKey(o.id)) prep = prep.then(function () { return lockProfile(o.id); }); });
+  return prep.then(function () {
+    var incoming = sanitizeV2(d);
+    var omittedIds = {};
+    omitted.forEach(function (o) { if (o && o.id) omittedIds[o.id] = true; });
+    if (omitted.length) {
+      var incomingIds = {};
+      incoming.profiles.forEach(function (p) { incomingIds[p.id] = true; });
+      state.profiles.forEach(function (p) { if (omittedIds[p.id] && !incomingIds[p.id]) incoming.profiles.push(p); });
+    }
+    var names = incoming.profiles.map(function (p) { return p.name; }).join(", ");
+    var lockedN = incoming.profiles.filter(function (p) { return p.lock && p.lock.enabled && !p.lock.pending; }).length;
+    var note = omitted.length ? " Left out of the file: " + omitted.map(function (o) { return o.name; }).join(", ") + ". Those profiles already on this device are kept." : "";
+    if (!confirm("Replace profiles in this browser with this backup (" + names + ", " + incoming.recipes.length + " shared recipes, " + lockedN + " PIN-locked)?" + note)) return;
+    sessionKeys = {};
+    state = incoming;
+    session.viewId = canView(profileById(state.activeProfileId)) ? state.activeProfileId : fallbackProfileId();
+    save(); fillGoals(); renderAll(); toast("Imported backup");
+  });
+}
+function exportBackup() {
+  var skipped = [];
+  var include = {};
+  state.profiles.forEach(function (p) { if (p.lock && p.lock.damaged) skipped.push(p.name); });
+  var locked = state.profiles.filter(function (p) { return p.lock && p.lock.enabled && !p.lock.pending && !p.lock.damaged; });
+  var chain = Promise.resolve(true);
+  locked.forEach(function (p) {
+    chain = chain.then(function (go) {
+      if (!go) return false;
+      return openGate({ mode: "export-ask", step: "export-ask", profile: p, buf: "", error: "" }).then(function (res) {
+        if (res === "skip") { skipped.push(p.name); return true; }
+        if (res === true) { include[p.id] = true; return true; }
+        return false;
+      });
+    });
+  });
+  return chain.then(function (go) {
+    if (!go) { toast("Export cancelled"); return; }
+    var tasks = state.profiles.map(function (p) {
+      if (p.lock && p.lock.damaged) return Promise.resolve(null);
+      if (p.lock && p.lock.enabled && !p.lock.pending) {
+        if (!include[p.id]) return Promise.resolve(null);
+        if (hasKey(p.id)) {
+          return window.CadenceLock.seal(sessionKeys[p.id], { foods: p.foods, weights: p.weights, goals: copyGoals(p.goals) }).then(function (sealed) {
+            var lock = JSON.parse(JSON.stringify(p.lock));
+            lock.sealed = sealed;
+            return { id: p.id, name: p.name, color: p.color, lock: lock };
+          });
+        }
+        return Promise.resolve({ id: p.id, name: p.name, color: p.color, lock: JSON.parse(JSON.stringify(p.lock)) });
+      }
+      var o = { id: p.id, name: p.name, color: p.color, foods: p.foods, weights: p.weights, goals: p.goals };
+      if (p.lock) o.lock = JSON.parse(JSON.stringify(p.lock));
+      return Promise.resolve(o);
+    });
+    return Promise.all(tasks).then(function (rows) {
+      var data = {
+        exportedAt: new Date().toISOString(), app: "Cadence", version: 2,
+        activeProfileId: state.activeProfileId, profiles: rows.filter(Boolean), recipes: state.recipes, settings: state.settings
+      };
+      if (skipped.length) data.omittedProfiles = skipped.map(function (name) {
+        var p = state.profiles.filter(function (x) { return x.name === name; })[0];
+        return { id: p ? p.id : name, name: name };
+      });
+      window.__cadenceLastExport = data;
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "cadence-backup-" + todayKey() + ".json";
+      document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+      toast(skipped.length ? ("Exported backup. Left out " + skipped.join(", ") + " \u2014 enter the PIN to include a locked profile.") : "Exported backup");
+    });
+  });
+}
+$("#d-export").addEventListener("click", function () { exportBackup(); });
 $("#d-import").addEventListener("click", function () { $("#d-file").click(); });
 $("#d-file").addEventListener("change", function () {
   var file = this.files[0]; if (!file) return;
   var rd = new FileReader();
   rd.onload = function () {
-    try {
-      var d = JSON.parse(rd.result);
-      if (!d || (!Array.isArray(d.foods) && !Array.isArray(d.weights) && !Array.isArray(d.recipes))) throw new Error("Not a Cadence backup");
-      var nd = sanitize(d);
-      if (confirm("Replace the data in this browser with the backup? (" + nd.foods.length + " food entries, " + nd.weights.length + " weigh-ins, " + nd.recipes.length + " recipes)")) {
-        state = nd; save(); fillGoals(); renderAll(); toast("Imported backup");
-      }
-    } catch (e) { toast("Import failed: " + e.message); }
+    try { importData(JSON.parse(rd.result)); }
+    catch (e) { toast("Import failed: " + e.message); }
   };
   rd.readAsText(file); this.value = "";
 });
 $("#d-clear").addEventListener("click", function () {
-  if (confirm("Delete ALL Cadence data in this browser? Export a backup first if you need it.")) { state = blank(); save(); fillGoals(); renderAll(); toast("All data cleared"); }
+  if (!confirm("Delete ALL Cadence data in this browser? Every profile's food log, weights and goals, plus shared recipes, will be erased. Joseph, Cindy and Leo are reset. Cindy will need a new PIN. Export a backup first if you need it.")) return;
+  sessionKeys = {};
+  state = blankV2();
+  session.viewId = "joseph";
+  state.activeProfileId = "joseph";
+  save(); fillGoals(); renderAll(); toast("All data cleared");
 });
 function renderInfo() {
-  $("#d-info").textContent = state.foods.length + " food entries \u00b7 " + state.weights.length + " weigh-ins \u00b7 " + state.recipes.length + " recipes \u00b7 " + FOODS.length + " foods in the built-in list";
+  var bits = state.profiles.map(function (x) {
+    if (x.lock && x.lock.enabled && !x.lock.pending && !hasKey(x.id)) return x.name + ": locked";
+    return x.name + ": " + x.foods.length + " entries";
+  });
+  $("#d-info").textContent = bits.join(" \u00b7 ") + " \u00b7 " + state.recipes.length + " shared recipes \u00b7 " + FOODS.length + " foods in the built-in list";
+}
+function renderLockSettings() {
+  var p = current(), el = $("#lock-card-body");
+  if (!el || !p) return;
+  if (p.lock && p.lock.enabled && !p.lock.pending && !p.lock.damaged) {
+    el.innerHTML = "<p class=\"hint\">" + esc(p.name) + "'s food log, goals and weight are encrypted on this device until the PIN is entered. This hides them on a shared phone. It is not protection against someone using developer tools.</p>" +
+      '<div class="row wrap"><button type="button" class="btn" id="lock-change">Change PIN</button><button type="button" class="btn ghost" id="lock-off">Turn off lock</button></div>';
+  } else {
+    el.innerHTML = "<p class=\"hint\">" + esc(p.name) + "'s log is not locked. Anyone using this browser can open it.</p>" +
+      '<button type="button" class="btn ghost" id="lock-enable">Lock with PIN</button>';
+  }
+}
+$("#lock-card").addEventListener("click", function (e) {
+  var b = e.target.closest("button"); if (!b) return;
+  var p = current();
+  if (b.id === "lock-enable") enableLock(p);
+  if (b.id === "lock-change") changePinFlow(p);
+  if (b.id === "lock-off") turnOffFlow(p);
+});
+
+/* ---------------- profiles ---------------- */
+var profileDlg = $("#profile-dialog");
+var renamingId = null;
+function syncPill() {
+  var p = current();
+  $("#profile-avatar").textContent = initial(p.name);
+  $("#profile-avatar").style.background = p.color;
+  $("#profile-name").textContent = p.name;
+  $("#profile-pill").classList.toggle("is-locked", !!(p.lock && p.lock.enabled && !p.lock.pending));
+  $("#profile-pill").setAttribute("aria-label", "Switch profile, current " + p.name);
+}
+function renderProfileList() {
+  var html = state.profiles.map(function (p) {
+    var on = p.id === session.viewId && canView(p);
+    var locked = !!(p.lock && p.lock.enabled);
+    var avatar = '<span class="avatar" style="background:' + esc(p.color) + '">' + esc(initial(p.name)) + (locked && !p.lock.pending ? '<i class="lockdot"></i>' : "") + "</span>";
+    if (renamingId === p.id) {
+      return '<div class="profile-row' + (on ? " active" : "") + '" data-id="' + esc(p.id) + '">' + avatar +
+        '<form class="rename-form"><input class="rename-input" value="' + esc(p.name) + '" maxlength="24" aria-label="Profile name" required><button class="btn small" type="submit">Save</button></form></div>';
+    }
+    var acts = '<button type="button" class="mini" data-act="rename">Rename</button><button type="button" class="mini danger" data-act="remove">Remove</button>';
+    if (!locked) acts += '<button type="button" class="mini" data-act="lock">Lock with PIN</button>';
+    return '<div class="profile-row' + (on ? " active" : "") + '" data-id="' + esc(p.id) + '" role="option" aria-selected="' + (on ? "true" : "false") + '">' + avatar +
+      '<button type="button" class="who" data-act="switch">' + esc(p.name) +
+      (on ? '<span class="tag">Active</span>' : "") +
+      (locked ? '<span class="tag locktag">PIN</span>' : "") + "</button>" +
+      '<span class="pacts">' + acts + "</span></div>";
+  }).join("");
+  $("#profile-list").innerHTML = html;
+  var inp = $("#profile-list .rename-input");
+  if (inp) { inp.focus(); inp.select(); }
+}
+function openProfileDialog() {
+  renamingId = null;
+  renderProfileList();
+  if (profileDlg.showModal) { if (!profileDlg.open) profileDlg.showModal(); }
+  else profileDlg.setAttribute("open", "");
+}
+function closeProfileDialog() {
+  renamingId = null;
+  if (profileDlg.open && profileDlg.close) profileDlg.close();
+}
+$("#profile-pill").addEventListener("click", openProfileDialog);
+$("#profile-close").addEventListener("click", closeProfileDialog);
+profileDlg.addEventListener("close", function () { renamingId = null; });
+$("#profile-list").addEventListener("click", function (ev) {
+  if (ev.target.closest(".rename-form")) return;
+  var row = ev.target.closest(".profile-row"); if (!row) return;
+  var id = row.getAttribute("data-id");
+  var act = ev.target.closest("[data-act]");
+  var action = act ? act.getAttribute("data-act") : "switch";
+  if (action === "rename") { renamingId = id; renderProfileList(); return; }
+  if (action === "remove") { removeProfile(id); return; }
+  if (action === "lock") { closeProfileDialog(); enableLock(profileById(id)); return; }
+  switchTo(id);
+});
+$("#profile-list").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  var row = ev.target.closest(".profile-row"); if (!row) return;
+  renameProfile(row.getAttribute("data-id"), $(".rename-input", row).value);
+});
+$("#profile-add-form").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  var input = $("#profile-new-name");
+  if (addProfile(input.value)) input.value = "";
+});
+function renameProfile(id, name) {
+  name = String(name || "").trim().slice(0, 24);
+  if (!name) { toast("Enter a name"); return; }
+  if (state.profiles.some(function (p) { return p.id !== id && p.name.toLowerCase() === name.toLowerCase(); })) { toast("There's already a profile named " + name); return; }
+  var p = profileById(id); if (!p) return;
+  p.name = name; renamingId = null; save(); renderAll(); renderProfileList();
+}
+function addProfile(name) {
+  name = String(name || "").trim().slice(0, 24);
+  if (!name) { toast("Enter a name"); return false; }
+  if (state.profiles.some(function (p) { return p.name.toLowerCase() === name.toLowerCase(); })) { toast("There's already a profile named " + name); return false; }
+  var id = uid();
+  state.profiles.push(makeProfile(id, name, PALETTE[state.profiles.length % PALETTE.length]));
+  enterProfile(id);
+  return true;
+}
+function removeProfile(id) {
+  if (state.profiles.length <= 1) { toast("Keep at least one profile"); return; }
+  var p = profileById(id); if (!p) return;
+  var finish = function () {
+    var sealed = p.lock && p.lock.enabled && !p.lock.pending && !hasKey(p.id);
+    var msg;
+    if (p.id === "joseph" || sealed || p.foods.length || p.weights.length) {
+      msg = sealed
+        ? "Remove " + p.name + "? This deletes the encrypted food log, weights and goals saved for " + p.name + "."
+        : "Remove " + p.name + "? This deletes " + p.foods.length + " food " + (p.foods.length === 1 ? "entry" : "entries") + " and " + p.weights.length + " weigh-in" + (p.weights.length === 1 ? "" : "s") + ".";
+      if (p.id === "joseph") msg += " Joseph's existing data will be removed from this profile.";
+    } else msg = "Remove " + p.name + "'s profile?";
+    if (!confirm(msg)) return;
+    state.profiles = state.profiles.filter(function (x) { return x.id !== id; });
+    delete sessionKeys[id];
+    if (session.viewId === id || state.activeProfileId === id) {
+      var next = fallbackProfileId();
+      session.viewId = next;
+      state.activeProfileId = next;
+    }
+    save(); fillGoals(); renderAll();
+    if (profileDlg.open) renderProfileList();
+    toast("Removed " + p.name);
+  };
+  if (p.lock && p.lock.damaged) { closeProfileDialog(); openGate({ mode: "damaged", step: "damaged", profile: p, buf: "", error: "" }); return; }
+  if (p.lock && p.lock.enabled && !p.lock.pending) {
+    closeProfileDialog();
+    openGate({ mode: "delete", step: "pin", profile: p, buf: "", error: "", title: "Enter " + p.name + "'s PIN to remove the profile" }).then(function (ok) { if (ok) finish(); });
+    return;
+  }
+  finish();
+}
+function enterProfile(id) {
+  var prev = session.viewId;
+  if (dlg && dlg.open) { dlg.close(); editing = null; }
+  session.viewId = id;
+  state.activeProfileId = id;
+  fillGoals();
+  renderAll();
+  closeProfileDialog();
+  var p = profileById(id);
+  if (p) toast("Showing " + p.name);
+  if (prev && prev !== id && hasKey(prev)) return lockProfile(prev);
+  return save();
+}
+function switchTo(id) {
+  var p = profileById(id); if (!p) return;
+  if (p.id === session.viewId && canView(p)) { closeProfileDialog(); return; }
+  if (!window.CadenceLock || !window.CadenceLock.available()) {
+    if (p.lock && p.lock.enabled) { toast("A PIN lock needs https or localhost."); return; }
+  }
+  if (p.lock && p.lock.enabled && p.lock.pending) {
+    closeProfileDialog();
+    setupLock(p).then(function (ok) { if (ok) enterProfile(p.id); });
+    return;
+  }
+  if (p.lock && p.lock.enabled && !hasKey(p.id)) {
+    closeProfileDialog();
+    unlockFlow(p).then(function (ok) { if (ok) enterProfile(p.id); });
+    return;
+  }
+  enterProfile(p.id);
+}
+function cryptoReady() {
+  if (window.CadenceLock && window.CadenceLock.available()) return true;
+  toast("A PIN lock needs https or localhost.");
+  return false;
+}
+function setupLock(p) {
+  if (!cryptoReady()) return Promise.resolve(false);
+  return openGate({ mode: "setup", step: "create", profile: p, buf: "", error: "", title: "Create a 4\u20136 digit PIN for " + p.name, sub: "Enter it twice. Then write down the recovery code." });
+}
+function enableLock(p) {
+  if (!p || !cryptoReady()) return Promise.resolve(false);
+  if (p.lock && p.lock.enabled && !p.lock.pending) { toast(p.name + " already has a PIN"); return Promise.resolve(false); }
+  var viewing = p.id === session.viewId && canView(p);
+  return setupLock(p).then(function (ok) {
+    if (!ok) return false;
+    if (viewing) { save(); renderLockSettings(); toast(p.name + " is now locked with a PIN"); return true; }
+    return lockProfile(p.id).then(function () { toast(p.name + " is now locked with a PIN"); return true; });
+  });
+}
+function unlockFlow(p) {
+  if (p.lock && p.lock.damaged) return openGate({ mode: "damaged", step: "damaged", profile: p, buf: "", error: "" });
+  return openGate({ mode: "unlock", step: "pin", profile: p, buf: "", error: "", title: "Enter " + p.name + "'s PIN" });
+}
+function changePinFlow(p) {
+  if (!p || !p.lock || p.lock.pending || !hasKey(p.id)) { toast("Open the profile with its PIN first"); return; }
+  openGate({ mode: "change", step: "current", profile: p, buf: "", error: "", title: "Enter the current PIN" }).then(function (ok) {
+    if (ok) renderLockSettings();
+  });
+}
+function turnOffFlow(p) {
+  if (!p || !p.lock || !p.lock.enabled || p.lock.pending) return;
+  openGate({ mode: "off", step: "pin", profile: p, buf: "", error: "", title: "Enter " + p.name + "'s PIN to turn off the lock", sub: "The log stays on this device, without a PIN." }).then(function (ok) {
+    if (!ok) return;
+    delete sessionKeys[p.id];
+    p.lock = null;
+    save();
+    renderLockSettings();
+    syncPill();
+    toast("PIN lock is off");
+  });
 }
 
+/* ---------------- PIN gate ---------------- */
+var gateDlg = $("#gate-dialog");
+var gateState = null;
+var gateTick = null;
+function cooldownLeft(id) {
+  var f = fails[id];
+  if (!f || !f.until) return 0;
+  var left = f.until - Date.now();
+  if (left <= 0) { f.until = 0; f.n = 0; storeFails(); return 0; }
+  return left;
+}
+function storeFails() { try { sessionStorage.setItem(LOCKOUT_KEY, JSON.stringify(fails)); } catch (e) {} }
+function noteFail(id) {
+  var f = fails[id] || { n: 0, until: 0 };
+  if (f.until && f.until > Date.now()) return;
+  f.n = (f.n || 0) + 1;
+  if (f.n >= FAIL_LIMIT) { f.until = Date.now() + COOLDOWN_MS; f.n = 0; }
+  fails[id] = f;
+  storeFails();
+}
+function noteSuccess(id) { fails[id] = { n: 0, until: 0 }; storeFails(); }
+function dotsHtml(buf) {
+  var s = '<div class="dots" id="gate-dots" aria-hidden="true">';
+  for (var i = 0; i < 6; i++) s += '<i class="' + (i < buf.length ? "on" : "") + '"></i>';
+  return s + "</div>";
+}
+function padHtml() {
+  var keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"];
+  return '<div class="pad" id="gate-pad">' + keys.map(function (k) {
+    if (!k) return '<button type="button" class="ghostkey" tabindex="-1" disabled></button>';
+    if (k === "del") return '<button type="button" class="fn" data-act="back" aria-label="Delete digit">\u232b</button>';
+    return '<button type="button" data-digit="' + k + '">' + k + "</button>";
+  }).join("") + "</div>";
+}
+function renderGate() {
+  if (!gateState) return;
+  var st = gateState, p = st.profile, left = cooldownLeft(p.id);
+  var title = st.title || "", sub = st.sub || "", body = "";
+  if (st.step === "export-ask") {
+    title = "Include " + p.name + " in this backup?";
+    sub = "A PIN is required. Leave " + p.name + " out and this file won't contain that log.";
+    body = '<div class="row wrap center"><button type="button" class="btn" id="gate-include">Enter PIN</button><button type="button" class="btn ghost" id="gate-skip">Leave out</button></div><button type="button" class="link block" id="gate-cancel">Cancel export</button>';
+  } else if (st.step === "showcode") {
+    title = "Write this down";
+    sub = "This recovery code is shown once. It resets " + p.name + "'s PIN and keeps the log. Leave now and the PIN is not saved.";
+    body = '<div class="gate-code" id="gate-code">' + esc(window.CadenceLock.formatCode(st.pending.recoveryCode)) + '</div><button type="button" class="btn wide" id="gate-ack">I\u2019ve written it down</button>';
+  } else if (st.step === "recovery") {
+    title = "Recovery code";
+    sub = "Enter the 8 character code for " + p.name + ".";
+    body = '<input id="gate-recovery" class="gate-input" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-label="Recovery code" placeholder="ABCD-EFGH">' +
+      '<button class="btn wide" type="submit" id="gate-next">Continue</button><button type="button" class="link danger block" id="gate-reset">Reset profile</button><button type="button" class="link block" id="gate-cancel">Not now</button>';
+  } else if (st.step === "reset") {
+    title = "Reset " + p.name;
+    sub = "This erases " + p.name + "'s food, weight and goals. Type " + p.name + " to confirm. The profile stays locked until a new PIN is created.";
+    body = '<input id="gate-confirm-name" class="gate-input" autocomplete="off" aria-label="Type the profile name to confirm" placeholder="' + esc(p.name) + '">' +
+      '<button class="btn wide danger" type="submit" id="gate-next">Erase profile</button><button type="button" class="link block" id="gate-back">Back</button>';
+  } else if (st.step === "damaged") {
+    title = p.name + "\u2019s lock can\u2019t be opened";
+    sub = "Resetting erases whatever was stored for this profile. There is no way to view it without the PIN or recovery code.";
+    body = '<button type="button" class="btn wide danger" id="gate-reset">Reset profile</button><button type="button" class="link block" id="gate-cancel">Not now</button>';
+  } else {
+    if (!title) {
+      if (st.step === "create") title = (st.mode === "change" || st.mode === "recover-new") ? "Enter a new 4\u20136 digit PIN" : "Create a 4\u20136 digit PIN for " + p.name;
+      else if (st.step === "confirm") title = "Enter the same PIN again";
+      else if (st.step === "current") title = "Enter the current PIN";
+      else title = "Enter " + p.name + "'s PIN";
+    }
+    if (left > 0) sub = "Too many tries. Wait " + Math.ceil(left / 1000) + "s.";
+    else if (!sub && st.step === "create" && st.mode === "setup") sub = "This only hides " + p.name + "'s log on this device.";
+    else if (!sub && (st.mode === "unlock" || st.mode === "delete" || st.mode === "off" || st.mode === "export")) sub = "Nothing of " + p.name + "'s is shown until the PIN is right.";
+    var label = st.busy ? "Checking\u2026" : (st.mode === "unlock" && st.step === "pin" ? "Unlock" : "Next");
+    body = dotsHtml(st.buf) + padHtml() +
+      '<button class="btn wide" type="submit" id="gate-next"' + (st.buf.length < 4 || left > 0 || st.busy ? " disabled" : "") + ">" + label + "</button>";
+    if (st.mode === "unlock" && st.step === "pin") body += '<button type="button" class="link block" id="gate-forgot">Forgot PIN?</button>';
+    if (st.step !== "showcode") body += '<button type="button" class="link block" id="gate-cancel">Not now</button>';
+  }
+  $("#gate-root").innerHTML = '<form id="gate-form" autocomplete="off"><div class="gate-ava" style="background:' + esc(p.color) + '">' + esc(initial(p.name)) + "</div>" +
+    '<h2 id="gate-title">' + esc(title) + "</h2>" + (sub ? '<p class="sub" id="gate-sub">' + esc(sub) + "</p>" : "") +
+    '<div id="gate-error" class="hint warn" role="status">' + esc(st.error || "") + "</div>" + body + "</form>";
+  var rec = $("#gate-recovery"), name = $("#gate-confirm-name");
+  if (rec) rec.focus(); else if (name) name.focus();
+  if (gateTick) { clearInterval(gateTick); gateTick = null; }
+  if (left > 0) {
+    gateTick = setInterval(function () {
+      if (!gateState) { clearInterval(gateTick); return; }
+      var remain = cooldownLeft(gateState.profile.id);
+      var node = $("#gate-sub");
+      if (remain <= 0) { clearInterval(gateTick); gateTick = null; gateState.error = ""; gateState.sub = ""; renderGate(); return; }
+      if (node) node.textContent = "Too many tries. Wait " + Math.ceil(remain / 1000) + "s.";
+    }, 250);
+  }
+}
+function openGate(partial) {
+  if (gateState) closeGate(false);
+  return new Promise(function (resolve) {
+    gateState = partial;
+    gateState.resolve = resolve;
+    gateState.buf = partial.buf || "";
+    gateState.error = partial.error || "";
+    gateState.busy = false;
+    renderGate();
+    if (gateDlg.showModal) { if (!gateDlg.open) gateDlg.showModal(); }
+    else gateDlg.setAttribute("open", "");
+  });
+}
+function closeGate(result) {
+  if (gateTick) { clearInterval(gateTick); gateTick = null; }
+  var st = gateState;
+  gateState = null;
+  if (gateDlg.open && gateDlg.close) gateDlg.close();
+  if ($("#gate-root")) $("#gate-root").innerHTML = "";
+  if (st && st.resolve) st.resolve(result);
+}
+function pushDigit(d) {
+  if (!gateState || gateState.busy) return;
+  if (gateState.step === "recovery" || gateState.step === "reset" || gateState.step === "showcode" || gateState.step === "export-ask" || gateState.step === "damaged") return;
+  if (cooldownLeft(gateState.profile.id) > 0) return;
+  if (gateState.buf.length >= 6) return;
+  gateState.buf += d;
+  gateState.error = "";
+  var dots = $("#gate-dots");
+  if (!dots) { renderGate(); return; }
+  var nodes = dots.querySelectorAll("i");
+  for (var i = 0; i < nodes.length; i++) nodes[i].classList.toggle("on", i < gateState.buf.length);
+  var err = $("#gate-error"); if (err) err.textContent = "";
+  var next = $("#gate-next"); if (next) next.disabled = gateState.buf.length < 4;
+}
+function popDigit() {
+  if (!gateState || gateState.busy || !gateState.buf) return;
+  gateState.buf = gateState.buf.slice(0, -1);
+  var dots = $("#gate-dots"); if (!dots) return;
+  var nodes = dots.querySelectorAll("i");
+  for (var i = 0; i < nodes.length; i++) nodes[i].classList.toggle("on", i < gateState.buf.length);
+  var next = $("#gate-next"); if (next) next.disabled = gateState.buf.length < 4;
+}
+function submitGate() {
+  if (!gateState || gateState.busy) return;
+  var st = gateState, p = st.profile;
+  if (st.step === "export-ask" || st.step === "showcode" || st.step === "damaged") return;
+  if (st.step === "reset") { doReset(p); return; }
+  if (st.step === "recovery") { doRecovery(p); return; }
+  if (st.buf.length < 4 || st.buf.length > 6) { st.error = "Use a 4 to 6 digit PIN"; renderGate(); return; }
+  if (cooldownLeft(p.id) > 0) { st.error = "Too many tries. Wait " + Math.ceil(cooldownLeft(p.id) / 1000) + "s."; renderGate(); return; }
+  if (st.step === "create") { st.firstPin = st.buf; st.buf = ""; st.step = "confirm"; st.error = ""; st.title = ""; st.sub = ""; renderGate(); return; }
+  if (st.step === "confirm") {
+    if (st.buf !== st.firstPin) { st.error = "Those PINs didn\u2019t match. Try again."; st.buf = ""; st.firstPin = ""; st.step = "create"; st.title = ""; renderGate(); return; }
+    if (st.mode === "setup" || st.mode === "reset-setup") finishSetup(p, st.buf);
+    else finishNewPin(p, st.buf);
+    return;
+  }
+  if (st.step === "pin" || st.step === "current") checkPin(p, st.buf);
+}
+function finishSetup(p, pin) {
+  gateState.busy = true; renderGate();
+  window.CadenceLock.setup(pin).then(function (res) {
+    if (!gateState) return;
+    gateState.pending = res;
+    gateState.step = "showcode";
+    gateState.busy = false;
+    gateState.error = "";
+    gateState.title = "";
+    gateState.sub = "";
+    renderGate();
+  }).catch(function (e) {
+    if (!gateState) return;
+    gateState.busy = false;
+    gateState.error = e.message || "Couldn\u2019t create a PIN";
+    renderGate();
+  });
+}
+function acknowledgeSetup() {
+  if (!gateState || !gateState.pending) return;
+  var p = gateState.profile, res = gateState.pending;
+  p.lock = res.lock;
+  sessionKeys[p.id] = res.dek;
+  closeGate(true);
+}
+function checkPin(p, pin) {
+  var st = gateState;
+  st.busy = true; renderGate();
+  window.CadenceLock.unlockPin(p.lock, pin).then(function (dek) {
+    noteSuccess(p.id);
+    if (!gateState) return;
+    if (st.mode === "unlock") {
+      var opened = p.lock.sealed ? window.CadenceLock.open(dek, p.lock.sealed) : Promise.resolve({ foods: [], weights: [], goals: null });
+      return opened.then(function (data) { applyOpened(p, dek, data); closeGate(true); }, function () {
+        if (!gateState) return;
+        st.busy = false; st.error = "Couldn\u2019t open this profile"; renderGate();
+      });
+    }
+    if (st.mode === "change" && st.step === "current") {
+      st.dek = dek; st.step = "create"; st.buf = ""; st.firstPin = ""; st.busy = false; st.error = ""; st.title = ""; st.sub = ""; renderGate();
+      return;
+    }
+    closeGate(true);
+  }, function (e) {
+    noteFail(p.id);
+    if (!gateState) return;
+    st.busy = false; st.buf = "";
+    st.error = cooldownLeft(p.id) > 0 ? ("Too many tries. Wait " + Math.ceil(cooldownLeft(p.id) / 1000) + "s.") : (e.message || "Wrong PIN");
+    renderGate();
+  });
+}
+function finishNewPin(p, pin) {
+  var st = gateState;
+  if (!st.dek) { st.error = "Enter the current PIN first"; renderGate(); return; }
+  st.busy = true; renderGate();
+  window.CadenceLock.changePin(p.lock, st.dek, pin).then(function (lock) {
+    p.lock = lock;
+    if (st.openedData) applyOpened(p, st.dek, st.openedData);
+    else sessionKeys[p.id] = st.dek;
+    save();
+    closeGate(true);
+    toast("PIN changed");
+  }).catch(function (e) {
+    if (!gateState) return;
+    st.busy = false; st.error = e.message || "Couldn\u2019t change the PIN"; renderGate();
+  });
+}
+function doRecovery(p) {
+  var code = $("#gate-recovery") ? $("#gate-recovery").value : "";
+  if (cooldownLeft(p.id) > 0) { gateState.error = "Too many tries. Wait " + Math.ceil(cooldownLeft(p.id) / 1000) + "s."; renderGate(); return; }
+  gateState.busy = true; renderGate();
+  window.CadenceLock.unlockRecovery(p.lock, code).then(function (dek) {
+    noteSuccess(p.id);
+    var opened = p.lock.sealed ? window.CadenceLock.open(dek, p.lock.sealed) : Promise.resolve({ foods: [], weights: [], goals: null });
+    return opened.then(function (data) {
+      if (!gateState) return;
+      gateState.dek = dek;
+      gateState.openedData = data;
+      gateState.mode = "recover-new";
+      gateState.step = "create";
+      gateState.buf = "";
+      gateState.firstPin = "";
+      gateState.busy = false;
+      gateState.error = "";
+      gateState.title = "";
+      gateState.sub = "Choose a new PIN for " + p.name + ". The log is kept.";
+      renderGate();
+    });
+  }).catch(function (e) {
+    noteFail(p.id);
+    if (!gateState) return;
+    gateState.busy = false;
+    gateState.error = cooldownLeft(p.id) > 0 ? ("Too many tries. Wait " + Math.ceil(cooldownLeft(p.id) / 1000) + "s.") : (e.message || "Wrong recovery code");
+    renderGate();
+  });
+}
+function doReset(p) {
+  var typed = $("#gate-confirm-name") ? $("#gate-confirm-name").value : "";
+  if (String(typed || "").trim().toLowerCase() !== String(p.name || "").trim().toLowerCase()) {
+    gateState.error = "Type " + p.name + " to confirm.";
+    renderGate();
+    return;
+  }
+  delete sessionKeys[p.id];
+  p.foods = [];
+  p.weights = [];
+  p.goals = copyGoals(null);
+  p.lock = { enabled: true, pending: true };
+  save();
+  gateState.mode = "reset-setup";
+  gateState.step = "create";
+  gateState.buf = "";
+  gateState.firstPin = "";
+  gateState.pending = null;
+  gateState.dek = null;
+  gateState.openedData = null;
+  gateState.error = "";
+  gateState.title = "Create a 4\u20136 digit PIN for " + p.name;
+  gateState.sub = "The old log was erased.";
+  renderGate();
+}
+gateDlg.addEventListener("click", function (ev) {
+  if (!gateState) return;
+  var t = ev.target.closest("button"); if (!t) return;
+  if (t.getAttribute("data-digit")) { pushDigit(t.getAttribute("data-digit")); return; }
+  if (t.getAttribute("data-act") === "back") { popDigit(); return; }
+  if (t.id === "gate-cancel") { closeGate(false); return; }
+  if (t.id === "gate-skip") { closeGate("skip"); return; }
+  if (t.id === "gate-include") { gateState.step = "pin"; gateState.mode = "export"; gateState.buf = ""; gateState.error = ""; gateState.title = "Enter " + gateState.profile.name + "'s PIN"; gateState.sub = ""; renderGate(); return; }
+  if (t.id === "gate-forgot") { gateState.step = "recovery"; gateState.error = ""; gateState.title = ""; gateState.sub = ""; renderGate(); return; }
+  if (t.id === "gate-reset") { gateState.step = "reset"; gateState.error = ""; gateState.title = ""; gateState.sub = ""; renderGate(); return; }
+  if (t.id === "gate-back") { gateState.step = "recovery"; gateState.error = ""; renderGate(); return; }
+  if (t.id === "gate-ack") acknowledgeSetup();
+});
+gateDlg.addEventListener("submit", function (ev) { ev.preventDefault(); submitGate(); });
+gateDlg.addEventListener("cancel", function (e) {
+  e.preventDefault();
+  if (!gateState || gateState.step === "showcode") return;
+  closeGate(false);
+});
+gateDlg.addEventListener("keydown", function (e) {
+  if (!gateState) return;
+  if (gateState.step === "recovery" || gateState.step === "reset" || gateState.step === "showcode" || gateState.step === "export-ask" || gateState.step === "damaged") return;
+  if (/^\d$/.test(e.key)) { e.preventDefault(); pushDigit(e.key); }
+  else if (e.key === "Backspace") { e.preventDefault(); popDigit(); }
+});
+
 /* ---------------- boot ---------------- */
-function renderAll() { renderToday(); renderFood(); renderWeight(); renderRecipeList(); renderInfo(); }
-$("#w-date").value = todayKey(); resetWhen(); fillGoals();
+function renderAll() {
+  if (!canView(profileById(session.viewId))) session.viewId = fallbackProfileId();
+  syncPill();
+  renderToday();
+  renderFood();
+  renderWeight();
+  renderRecipeList();
+  renderLockSettings();
+  renderInfo();
+}
+var idleTimer = null, hiddenAt = 0;
+function lockFromIdle() {
+  var ids = Object.keys(sessionKeys);
+  if (gateState && gateState.step === "showcode") { armIdle(); return; }
+  if (!ids.length) { armIdle(); return; }
+  if (gateState) closeGate(false);
+  var viewing = ids.indexOf(session.viewId) >= 0;
+  var chain = Promise.resolve();
+  ids.forEach(function (id) { chain = chain.then(function () { return lockProfile(id); }); });
+  chain.then(function () {
+    if (viewing || !canView(profileById(session.viewId))) {
+      session.viewId = fallbackProfileId();
+      fillGoals();
+      renderAll();
+      toast("Locked for privacy");
+    }
+    armIdle();
+  });
+}
+function armIdle() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(lockFromIdle, IDLE_MS);
+}
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "hidden") { hiddenAt = Date.now(); if (idleTimer) clearTimeout(idleTimer); }
+  else {
+    if (hiddenAt && Date.now() - hiddenAt >= IDLE_MS) lockFromIdle();
+    else armIdle();
+    hiddenAt = 0;
+  }
+});
+["pointerdown", "keydown", "touchstart"].forEach(function (ev) {
+  document.addEventListener(ev, armIdle, { passive: true, capture: true });
+});
+armIdle();
+$("#w-date").value = todayKey();
+resetWhen();
+fillGoals();
 showTab((location.hash || "#today").slice(1));
 window.addEventListener("hashchange", function () { showTab(location.hash.slice(1)); });
-window.addEventListener("storage", function (e) { if (e.key === KEY) { state = load(); fillGoals(); renderAll(); } });
+window.addEventListener("storage", function (e) {
+  if (e.key !== KEY && e.key !== null) return;
+  sessionKeys = {};
+  state = load();
+  if (!canView(profileById(session.viewId))) session.viewId = fallbackProfileId();
+  fillGoals();
+  renderAll();
+});
 if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
 }
-// test hook
-window.Cadence = { get state() { return state; }, logFood: logFood, logRecipe: logRecipe, reload: function () { state = load(); renderAll(); } };
+window.Cadence = {
+  get state() { return state; },
+  get viewId() { return session.viewId; },
+  logFood: logFood,
+  logRecipe: logRecipe,
+  whenSaved: function () { return saveChain; },
+  reload: function () {
+    sessionKeys = {};
+    state = load();
+    session.viewId = state.activeProfileId;
+    if (!canView(profileById(session.viewId))) session.viewId = fallbackProfileId();
+    fillGoals();
+    renderAll();
+  }
+};
 })();
