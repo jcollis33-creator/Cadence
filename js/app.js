@@ -1,9 +1,10 @@
 /* Cadence app logic. Plain JS, no dependencies.
- * Profiles live in localStorage key cadence.v2. cadence.v1 is kept as a backup. */
+ * Profiles live in localStorage key cadence.v3. cadence.v2 and cadence.v1 are kept as backups. */
 (function () {
 "use strict";
 var P = window.CadenceParser, FOODS = window.CADENCE_FOODS, INDEX = P.buildIndex(FOODS);
-var KEY = "cadence.v2";
+var KEY = "cadence.v3";
+var KEY_V2 = "cadence.v2";
 var KEY_V1 = "cadence.v1";
 var DEFAULT_GOALS = { kcal: 2200, p: 180, c: 220, f: 70, weight: 180 };
 var DEFAULT_SETTINGS = { fdcKey: "", online: true };
@@ -42,13 +43,33 @@ function copyWeights(list) {
     return { id: w.id || uid(), date: String(w.date).slice(0, 10), lb: +w.lb };
   });
 }
+function copyAge(v) {
+  if (v == null || v === "" || isNaN(+v)) return null;
+  var n = Math.round(+v);
+  if (n < 1 || n > 120) return null;
+  return n;
+}
+function copySex(v) { return v === "female" || v === "male" ? v : null; }
+function defaultDemo(id) {
+  if (id === "joseph") return { age: 30, sex: "male" };
+  if (id === "cindy") return { age: 30, sex: "female" };
+  return { age: null, sex: null };
+}
+function demoOf(p) {
+  var age = p && p.age != null ? copyAge(p.age) : null;
+  var sex = p && p.sex ? copySex(p.sex) : null;
+  return { age: age == null ? 30 : age, sex: sex || "male", assumed: age == null };
+}
 function makeProfile(id, name, color, extra) {
   extra = extra || {};
-  return { id: id, name: name, color: color, foods: copyFoods(extra.foods), weights: copyWeights(extra.weights), goals: copyGoals(extra.goals), lock: extra.lock || null };
+  var demo = defaultDemo(id);
+  var age = Object.prototype.hasOwnProperty.call(extra, "age") ? copyAge(extra.age) : demo.age;
+  var sex = Object.prototype.hasOwnProperty.call(extra, "sex") ? copySex(extra.sex) : demo.sex;
+  return { id: id, name: name, color: color, age: age, sex: sex, foods: copyFoods(extra.foods), weights: copyWeights(extra.weights), goals: copyGoals(extra.goals), lock: extra.lock || null };
 }
 function blankV2() {
   return {
-    version: 2,
+    version: 3,
     activeProfileId: "joseph",
     profiles: [
       makeProfile("joseph", "Joseph", "#1F5C45"),
@@ -84,8 +105,11 @@ function profileFromStored(p, i) {
   var color = /^#[0-9A-Fa-f]{6}$/.test(String(p.color || "")) ? String(p.color) : PALETTE[i % PALETTE.length];
   var lock = sanitizeLock(p.lock);
   var sealedOn = !!(lock && lock.enabled && !lock.pending);
+  var demo = defaultDemo(id);
+  var age = p && Object.prototype.hasOwnProperty.call(p, "age") ? copyAge(p.age) : (sealedOn ? null : demo.age);
+  var sex = p && Object.prototype.hasOwnProperty.call(p, "sex") ? copySex(p.sex) : (sealedOn ? null : demo.sex);
   return {
-    id: id, name: name, color: color, lock: lock,
+    id: id, name: name, color: color, age: age, sex: sex, lock: lock,
     foods: sealedOn ? [] : copyFoods(p.foods),
     weights: sealedOn ? [] : copyWeights(p.weights),
     goals: sealedOn ? copyGoals(null) : copyGoals(p.goals)
@@ -103,30 +127,52 @@ function sanitizeV2(d) {
   if (!profiles.length) return blankV2();
   var active = profiles.some(function (p) { return p.id === d.activeProfileId; }) ? d.activeProfileId : profiles[0].id;
   return {
-    version: 2,
+    version: 3,
     activeProfileId: active,
     profiles: profiles,
-    recipes: Array.isArray(d.recipes) ? d.recipes.filter(function (r) { return r && r.name; }) : [],
+    recipes: rederiveRecipes(Array.isArray(d.recipes) ? d.recipes : []),
     settings: copySettings(d.settings)
   };
+}
+function rederiveRecipes(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(function (r) { return r && r.name; }).map(function (r) {
+    var rec = JSON.parse(JSON.stringify(r));
+    rec.ingredients = (rec.ingredients || []).map(function (ing) {
+      if (!ing || ing.micros || ing.edited) return ing;
+      var parsed = P.resolveSegment(P.normalize(ing.text || ing.food || ""), INDEX, {});
+      if (parsed && parsed.matched && parsed.micros) {
+        ing.micros = parsed.micros;
+        if (parsed.fdcId && !ing.fdcId) ing.fdcId = parsed.fdcId;
+      }
+      return ing;
+    });
+    var micro = P.sumMicros(rec.ingredients || []);
+    var servings = Math.max(1, +rec.servings || 1);
+    if (!rec.totals) rec.totals = P.totals(rec.ingredients || []);
+    rec.totals.micros = micro;
+    if (!rec.perServing) rec.perServing = { kcal: 0, p: 0, c: 0, f: 0 };
+    rec.perServing.micros = P.divideMicros(micro, servings);
+    return rec;
+  });
 }
 function migrateV1(d) {
   var s = blankV2();
   s.profiles[0].foods = copyFoods(d.foods);
   s.profiles[0].weights = copyWeights(d.weights);
   s.profiles[0].goals = copyGoals(d.goals);
-  s.recipes = Array.isArray(d.recipes) ? d.recipes.filter(function (r) { return r && r.name; }) : [];
+  s.recipes = rederiveRecipes(Array.isArray(d.recipes) ? d.recipes : []);
   s.settings = copySettings(d.settings);
   s.activeProfileId = "joseph";
   return s;
 }
 function toStored(s) {
   return {
-    version: 2,
+    version: 3,
     activeProfileId: s.activeProfileId,
     profiles: s.profiles.map(function (p) {
       if (p.lock && p.lock.enabled && !p.lock.pending) return { id: p.id, name: p.name, color: p.color, lock: p.lock };
-      var o = { id: p.id, name: p.name, color: p.color, foods: p.foods, weights: p.weights, goals: p.goals };
+      var o = { id: p.id, name: p.name, color: p.color, age: p.age, sex: p.sex, foods: p.foods, weights: p.weights, goals: p.goals };
       if (p.lock) o.lock = p.lock;
       return o;
     }),
@@ -134,23 +180,25 @@ function toStored(s) {
     settings: s.settings
   };
 }
-function load() {
-  var raw = null;
-  try { raw = localStorage.getItem(KEY); } catch (e) { return blankV2(); }
-  if (raw) {
-    try {
-      var parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") return sanitizeV2(parsed);
-    } catch (e) {}
-    return blankV2();
-  }
-  var v1 = null;
+function readJSON(key) {
   try {
-    var v1raw = localStorage.getItem(KEY_V1);
-    if (v1raw) v1 = JSON.parse(v1raw);
-  } catch (e1) { v1 = null; }
+    var raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+function load() {
+  var parsed = readJSON(KEY);
+  if (parsed && typeof parsed === "object") return sanitizeV2(parsed);
+  var older = readJSON(KEY_V2);
+  if (older && typeof older === "object") {
+    var migrated = sanitizeV2(older);
+    try { localStorage.setItem(KEY, JSON.stringify(toStored(migrated))); } catch (e2) {}
+    return migrated;
+  }
+  var v1 = readJSON(KEY_V1);
   var s = (v1 && typeof v1 === "object") ? migrateV1(v1) : blankV2();
-  try { localStorage.setItem(KEY, JSON.stringify(toStored(s))); } catch (e2) {}
+  try { localStorage.setItem(KEY, JSON.stringify(toStored(s))); } catch (e3) {}
   return s;
 }
 var state = load();
@@ -193,6 +241,7 @@ function snapshot() {
     profiles: state.profiles.map(function (p) {
       return {
         id: p.id, name: p.name, color: p.color,
+        age: p.age, sex: p.sex,
         foods: JSON.parse(JSON.stringify(p.foods || [])),
         weights: JSON.parse(JSON.stringify(p.weights || [])),
         goals: copyGoals(p.goals),
@@ -207,7 +256,7 @@ function writeSnap(snap) {
   return Promise.all(snap.profiles.map(function (p) {
     if (p.lock && p.lock.enabled && !p.lock.pending) {
       var task = (p.open && p.key)
-        ? window.CadenceLock.seal(p.key, { foods: p.foods, weights: p.weights, goals: p.goals })
+        ? window.CadenceLock.seal(p.key, { foods: p.foods, weights: p.weights, goals: p.goals, age: p.age, sex: p.sex })
         : Promise.resolve(p.lock.sealed || null);
       return task.then(function (sealed) {
         var lock = JSON.parse(JSON.stringify(p.lock));
@@ -219,10 +268,11 @@ function writeSnap(snap) {
     }
     var o = { id: p.id, name: p.name, color: p.color, foods: p.foods, weights: p.weights, goals: p.goals };
     if (p.lock) o.lock = p.lock;
+    o.age = p.age; o.sex = p.sex;
     return o;
   })).then(function (profiles) {
     localStorage.setItem(KEY, JSON.stringify({
-      version: 2, activeProfileId: snap.activeProfileId, profiles: profiles, recipes: snap.recipes, settings: snap.settings
+      version: 3, activeProfileId: snap.activeProfileId, profiles: profiles, recipes: snap.recipes, settings: snap.settings
     }));
   });
 }
@@ -241,6 +291,8 @@ function lockProfile(id) {
     p.foods = [];
     p.weights = [];
     p.goals = copyGoals(null);
+    p.age = null;
+    p.sex = null;
   }, function () {});
   return saveChain;
 }
@@ -249,6 +301,11 @@ function applyOpened(p, dek, data) {
   p.foods = copyFoods(data && data.foods);
   p.weights = copyWeights(data && data.weights);
   p.goals = copyGoals(data && data.goals);
+  var demo = defaultDemo(p.id);
+  if (data && Object.prototype.hasOwnProperty.call(data, "age")) p.age = copyAge(data.age);
+  else if (p.age == null) p.age = demo.age;
+  if (data && Object.prototype.hasOwnProperty.call(data, "sex")) p.sex = copySex(data.sex);
+  else if (!p.sex) p.sex = demo.sex;
 }
 
 /* ---------------- utils ---------------- */
@@ -292,7 +349,13 @@ function showSub(name) {
   $$(".seg button").forEach(function (b) { b.classList.toggle("active", b.dataset.sub === name); });
   $$("#view-food .sub").forEach(function (s) { s.classList.toggle("active", s.id === "sub-" + name); });
 }
-$$(".seg button").forEach(function (b) { b.addEventListener("click", function () { showSub(b.dataset.sub); }); });
+$$("#view-food > .seg button").forEach(function (b) { b.addEventListener("click", function () { showSub(b.dataset.sub); }); });
+$("#today-mode").addEventListener("click", function (ev) {
+  var b = ev.target.closest("button[data-nut]");
+  if (!b) return;
+  todayNut = b.dataset.nut;
+  renderToday();
+});
 
 /* ---------------- voice ---------------- */
 var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -350,10 +413,16 @@ function enrichOnline(items) {
 function itemsFromText(text, withRecipes) {
   return P.parsePhrase(text, INDEX, { recipes: withRecipes === false ? [] : state.recipes });
 }
+function blankMicros() {
+  var o = {};
+  P.MICRO_KEYS.forEach(function (k) { o[k] = null; });
+  return o;
+}
 function cleanItem(it) {
   var o = { text: it.text, qty: it.qty, unit: it.unit || "", food: it.food, source: it.source, matched: !!it.matched,
     kcal: +it.kcal || 0, p: +it.p || 0, c: +it.c || 0, f: +it.f || 0 };
   if (it.grams) o.grams = it.grams; if (it.note) o.note = it.note; if (it.recipeId) o.recipeId = it.recipeId; if (it.fdcId) o.fdcId = it.fdcId;
+  if (it.micros && typeof it.micros === "object") o.micros = JSON.parse(JSON.stringify(it.micros));
   return o;
 }
 
@@ -381,7 +450,11 @@ function logFood(text, when) {
   return enrichOnline(items).then(function (r) {
     var dest = profileById(pid);
     if (!dest || !canView(dest)) { toast("That profile is locked"); return null; }
-    var entry = { id: uid(), ts: (when || new Date()).toISOString(), text: text, items: r.items.map(cleanItem) };
+    var entry = { id: uid(), ts: (when || new Date()).toISOString(), text: text, items: r.items.map(function (it) {
+      var c = cleanItem(it);
+      if (!c.micros) c.micros = blankMicros();
+      return c;
+    }) };
     dest.foods.push(entry); save();
     foodInput.value = ""; renderPreview(); resetWhen(); renderAll();
     var t = entryTotals(entry), miss = entry.items.filter(function (i) { return !i.matched; });
@@ -403,7 +476,8 @@ function logRecipe(id, qty, when) {
   var ps = r.perServing || { kcal: 0, p: 0, c: 0, f: 0 };
   var label = r.name + " (" + n1(qty) + (qty === 1 ? " serving)" : " servings)");
   var entry = { id: uid(), ts: (when || new Date()).toISOString(), text: label, items: [{ text: label, qty: qty, unit: "serving", food: label, source: "recipe",
-    recipeId: r.id, matched: true, kcal: Math.round(ps.kcal * qty), p: P.round1(ps.p * qty), c: P.round1(ps.c * qty), f: P.round1(ps.f * qty) }] };
+    recipeId: r.id, matched: true, kcal: Math.round(ps.kcal * qty), p: P.round1(ps.p * qty), c: P.round1(ps.c * qty), f: P.round1(ps.f * qty),
+    micros: P.scaleMicros(ps.micros, qty) || blankMicros() }] };
   dest.foods.push(entry); save(); renderAll(); toast("Logged " + label + " \u2014 " + n0(entry.items[0].kcal) + " kcal");
   return entry;
 }
@@ -425,7 +499,12 @@ function renderFood() {
   var html = days.length ? "" : '<div class="card"><div class="empty">No food logged yet. Try typing \u201ctwo eggs and toast\u201d.</div></div>';
   days.slice(0, 60).forEach(function (k) {
     var list = byDay[k].sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); }), t = dayTotals(k);
-    html += '<div class="card day"><h3><span>' + fmtDay(k) + '</span><span>' + n0(t.kcal) + ' kcal</span></h3><div class="tot">Protein ' + n1(t.p) + " g \u00b7 Carbs " + n1(t.c) + " g \u00b7 Fat " + n1(t.f) + " g</div>" + list.map(function (e) { return entryHTML(e); }).join("") + "</div>";
+    var mode = dayNut[k] || "macros";
+    var items = [].concat.apply([], list.map(function (e) { return e.items; }));
+    html += '<div class="card day" data-day="' + k + '"><h3><span>' + fmtDay(k) + '</span><span>' + n0(t.kcal) + ' kcal</span></h3>' +
+      '<div class="toggle mini"><button type="button" data-nut="macros"' + (mode === "macros" ? ' class="active"' : "") + '>Macros</button><button type="button" data-nut="nutrients"' + (mode === "nutrients" ? ' class="active"' : "") + '>Nutrients</button></div>' +
+      (mode === "nutrients" ? '<div class="nut-day">' + nutrientHTML(items, current(), true) + "</div>" : '<div class="tot">Protein ' + n1(t.p) + " g \u00b7 Carbs " + n1(t.c) + " g \u00b7 Fat " + n1(t.f) + " g</div>") +
+      list.map(function (e) { return entryHTML(e); }).join("") + "</div>";
   });
   $("#food-days").innerHTML = html;
   var sel = $("#rq-select"), cur = sel.value;
@@ -435,6 +514,8 @@ function renderFood() {
   if (cur) sel.value = cur;
 }
 $("#food-days").addEventListener("click", function (ev) {
+  var nb = ev.target.closest("button[data-nut]");
+  if (nb) { var card = nb.closest(".day"); if (card) { dayNut[card.dataset.day] = nb.dataset.nut; renderFood(); } return; }
   var b = ev.target.closest("button[data-act]"); if (!b) return;
   var id = b.closest(".entry").dataset.id;
   var prof = current();
@@ -459,7 +540,11 @@ function readEditItems() {
     var o = Object.assign({}, base, { food: name, kcal: +$(".e-kcal", row).value || 0, p: +$(".e-p", row).value || 0, c: +$(".e-c", row).value || 0, f: +$(".e-f", row).value || 0 });
     if (!base.text) { o.text = name; o.qty = 1; o.source = "manual"; }
     if (o.kcal || o.p || o.c || o.f) o.matched = true;
-    if (base.food !== name || base.kcal !== o.kcal || base.p !== o.p || base.c !== o.c || base.f !== o.f) { if (base.source && base.source !== "manual") o.note = (base.note ? base.note + "; " : "") + "edited"; if (base.matched === false) o.source = "manual"; }
+    if (base.food !== name || base.kcal !== o.kcal || base.p !== o.p || base.c !== o.c || base.f !== o.f) {
+      if (base.source && base.source !== "manual") o.note = (base.note ? base.note + "; " : "") + "edited";
+      if (base.matched === false) o.source = "manual";
+      o.micros = blankMicros();
+    }
     return o;
   });
 }
@@ -498,6 +583,62 @@ $("#edit-form").addEventListener("submit", function (ev) {
 });
 
 /* ---------------- today ---------------- */
+var NUTRIENTS = [
+  { k: "fiber", label: "Fiber", unit: "g" },
+  { k: "sugar", label: "Total sugar", unit: "g" },
+  { k: "sodium", label: "Sodium", unit: "mg" },
+  { k: "potassium", label: "Potassium", unit: "mg" },
+  { k: "calcium", label: "Calcium", unit: "mg" },
+  { k: "iron", label: "Iron", unit: "mg" },
+  { k: "magnesium", label: "Magnesium", unit: "mg" },
+  { k: "vita", label: "Vitamin A", unit: "\u00b5g" },
+  { k: "vitc", label: "Vitamin C", unit: "mg" },
+  { k: "vitd", label: "Vitamin D", unit: "\u00b5g" },
+  { k: "b12", label: "Vitamin B12", unit: "\u00b5g" }
+];
+var todayNut = "macros";
+var dayNut = {};
+function targetFor(key, age, sex) {
+  var f = sex === "female";
+  if (key === "sugar") return 50;
+  if (key === "sodium") { if (age <= 3) return 1200; if (age <= 8) return 1500; if (age <= 13) return 1800; return 2300; }
+  if (key === "fiber") { if (age <= 3) return 19; if (age <= 8) return 25; if (age <= 13) return f ? 26 : 31; if (age <= 18) return f ? 26 : 38; if (age <= 50) return f ? 25 : 38; return f ? 21 : 30; }
+  if (key === "potassium") { if (age <= 3) return 2000; if (age <= 8) return 2300; if (age <= 13) return f ? 2300 : 2500; if (age <= 18) return f ? 2300 : 3000; return f ? 2600 : 3400; }
+  if (key === "calcium") { if (age <= 3) return 700; if (age <= 8) return 1000; if (age <= 18) return 1300; if (age <= 50) return 1000; if (age <= 70) return f ? 1200 : 1000; return 1200; }
+  if (key === "iron") { if (age <= 3) return 7; if (age <= 8) return 10; if (age <= 13) return 8; if (age <= 18) return f ? 15 : 11; if (age <= 50) return f ? 18 : 8; return 8; }
+  if (key === "magnesium") { if (age <= 3) return 80; if (age <= 8) return 130; if (age <= 13) return 240; if (age <= 18) return f ? 360 : 410; if (age <= 30) return f ? 310 : 400; return f ? 320 : 420; }
+  if (key === "vita") { if (age <= 3) return 300; if (age <= 8) return 400; if (age <= 13) return 600; return f ? 700 : 900; }
+  if (key === "vitc") { if (age <= 3) return 15; if (age <= 8) return 25; if (age <= 13) return 45; if (age <= 18) return f ? 65 : 75; return f ? 75 : 90; }
+  if (key === "vitd") return age >= 71 ? 20 : 15;
+  if (key === "b12") { if (age <= 3) return 0.9; if (age <= 8) return 1.2; if (age <= 13) return 1.8; return 2.4; }
+  return 0;
+}
+function nNut(k, v) {
+  if (v == null || isNaN(+v)) return "\u2014";
+  if (k === "b12" || k === "vitd") return (Math.round(+v * 100) / 100).toString();
+  if (k === "iron" || k === "vitc" || k === "fiber" || k === "sugar") return (Math.round(+v * 10) / 10).toString();
+  return Math.round(+v).toString();
+}
+function nutrientHTML(items, prof, compact) {
+  var bag = P.collectMicros(items), demo = demoOf(prof);
+  var html = "";
+  if (demo.assumed) html += '<p class="hint warn" data-demo-prompt="1">Set ' + esc(prof.name) + "'s age for accurate targets</p>";
+  if (bag.legacy) html += '<p class="hint warn" data-legacy="1">Incomplete \u2014 some entries logged before nutrient tracking</p>';
+  html += NUTRIENTS.map(function (n) {
+    var a = bag.acc[n.k], goal = targetFor(n.k, demo.age, demo.sex);
+    var known = a.known > 0, incomplete = a.missing > 0;
+    var val = known ? a.sum : null;
+    var pct = val == null || !(goal > 0) ? 0 : Math.min(100, val / goal * 100);
+    var over = n.k === "sodium" && val != null && val > goal;
+    var right = (val == null ? "\u2014" : nNut(n.k, val)) + " / " + nNut(n.k, goal) + " " + n.unit + (val == null ? "" : " \u00b7 " + Math.round(val / goal * 100) + "%");
+    var flag = incomplete ? ' <span class="muted">incomplete</span>' : "";
+    return '<div class="bar' + (over ? " over" : "") + '" data-nutrient="' + n.k + '"><div class="bar-top"><span><b>' + n.label + "</b>" + flag + "</span><span>" + right + '</span></div><div class="track"><div class="fill" style="width:' + pct.toFixed(1) + "%;background:" + (over ? "var(--warn)" : "var(--forest)") + '"></div></div></div>';
+  }).join("");
+  html += compact
+    ? '<p class="hint source-note">USDA FoodData Central. Targets: NIH ODS / National Academies DRIs.</p>'
+    : '<p class="hint source-note">Targets are NIH Office of Dietary Supplements / National Academies DRIs (RDA or AI). Sodium uses the chronic disease risk reduction level as an upper target (2,300 mg from age 14, lower for children). Sugar uses the FDA 50 g Daily Value for added sugar; the amount here is total sugar. Food values are USDA FoodData Central.</p>';
+  return html;
+}
 function bar(label, val, goal, color, unit) {
   var pct = goal > 0 ? Math.min(100, val / goal * 100) : 0;
   return '<div class="bar"><div class="bar-top"><span><b>' + label + '</b></span><span>' + n0(val) + " / " + n0(goal) + " " + unit + '</span></div><div class="track"><div class="fill" style="width:' + pct.toFixed(1) + "%;background:" + (val > goal * 1.05 ? "var(--warn)" : color) + '"></div></div></div>';
@@ -511,8 +652,14 @@ function renderToday() {
   pill.textContent = left >= 0 ? n0(left) + " kcal left" : n0(-left) + " kcal over"; pill.classList.toggle("over", left < 0);
   var C = 2 * Math.PI * 50, frac = g.kcal > 0 ? Math.min(1, t.kcal / g.kcal) : 0, fg = $("#ring-fg");
   fg.style.strokeDasharray = C.toFixed(2); fg.style.strokeDashoffset = (C * (1 - frac)).toFixed(2); fg.classList.toggle("over", left < 0);
-  $("#macro-bars").innerHTML = bar("Protein", t.p, g.p, "var(--p)", "g") + bar("Carbs", t.c, g.c, "var(--c)", "g") + bar("Fat", t.f, g.f, "var(--f)", "g");
   var list = prof.foods.filter(function (e) { return dayKey(e.ts) === todayKey(); }).sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
+  var todayItems = [].concat.apply([], list.map(function (e) { return e.items; }));
+  $("#macro-bars").innerHTML = bar("Protein", t.p, g.p, "var(--p)", "g") + bar("Carbs", t.c, g.c, "var(--c)", "g") + bar("Fat", t.f, g.f, "var(--f)", "g");
+  $("#macro-bars").hidden = todayNut !== "macros";
+  var nut = $("#nutrient-panel");
+  nut.hidden = todayNut !== "nutrients";
+  nut.innerHTML = nutrientHTML(todayItems, prof);
+  $$("#today-mode button").forEach(function (b) { b.classList.toggle("active", b.dataset.nut === todayNut); });
   $("#today-entries").innerHTML = list.length ? list.map(function (e) { return entryHTML(e, true); }).join("") : '<li class="empty">Nothing logged yet today.</li>';
   var ws = sortedWeights();
   if (ws.length) {
@@ -579,8 +726,13 @@ $("#w-list").addEventListener("click", function (e) {
 
 /* ---------------- recipes (shared) ---------------- */
 var rEdit = null;
-function recipeTotals(rows) { return P.totals(rows); }
-function perServing(t, s) { s = Math.max(1, +s || 1); return { kcal: Math.round(t.kcal / s), p: P.round1(t.p / s), c: P.round1(t.c / s), f: P.round1(t.f / s) }; }
+function recipeTotals(rows) { var t = P.totals(rows); t.micros = P.sumMicros(rows); return t; }
+function perServing(t, s) {
+  s = Math.max(1, +s || 1);
+  var o = { kcal: Math.round(t.kcal / s), p: P.round1(t.p / s), c: P.round1(t.c / s), f: P.round1(t.f / s) };
+  if (t.micros) o.micros = P.divideMicros(t.micros, s);
+  return o;
+}
 function renderRecipeList() {
   var list = state.recipes.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
   $("#recipe-list").innerHTML = list.length ? list.map(function (r) {
@@ -620,7 +772,7 @@ function renderRecipeTable() {
 $("#re-table").addEventListener("change", function (e) {
   var inp = e.target; if (!inp.dataset.k) return;
   var row = rEdit.rows[+inp.closest("tr").dataset.i];
-  row[inp.dataset.k] = +inp.value || 0; row.matched = true; if (row.source !== "manual") row.note = "edited"; row.edited = true;
+  row[inp.dataset.k] = +inp.value || 0; row.matched = true; if (row.source !== "manual") row.note = "edited"; row.edited = true; row.micros = blankMicros();
   renderRecipeTable();
 });
 $("#re-servings").addEventListener("input", renderRecipeTable);
@@ -647,7 +799,7 @@ $("#recipe-editor").addEventListener("submit", function (e) {
   go.then(function () {
     if (!rEdit.rows.length) { toast("Add at least one ingredient"); return; }
     var servings = Math.max(1, +$("#re-servings").value || 1), t = recipeTotals(rEdit.rows);
-    var rec = { id: rEdit.id || uid(), name: name, servings: servings, ingredients: rEdit.rows.map(function (r) { return { text: r.text, qty: r.qty, unit: r.unit, food: r.food, source: r.source, matched: r.matched, grams: r.grams, note: r.note, edited: r.edited, kcal: r.kcal, p: r.p, c: r.c, f: r.f }; }),
+    var rec = { id: rEdit.id || uid(), name: name, servings: servings, ingredients: rEdit.rows.map(function (r) { return { text: r.text, qty: r.qty, unit: r.unit, food: r.food, source: r.source, matched: r.matched, grams: r.grams, note: r.note, edited: r.edited, kcal: r.kcal, p: r.p, c: r.c, f: r.f, fdcId: r.fdcId, micros: r.micros || null }; }),
       totals: t, perServing: perServing(t, servings), updated: new Date().toISOString() };
     var i = state.recipes.findIndex(function (x) { return x.id === rec.id; });
     if (i >= 0) state.recipes[i] = rec; else state.recipes.push(rec);
@@ -657,9 +809,13 @@ $("#recipe-editor").addEventListener("submit", function (e) {
 
 /* ---------------- goals, settings, data ---------------- */
 function fillGoals() {
-  var g = current().goals;
-  $("#goals-heading").textContent = current().name + "'s daily targets";
+  var prof = current(), g = prof.goals;
+  $("#goals-heading").textContent = prof.name + "'s daily targets";
   $("#g-kcal").value = g.kcal; $("#g-p").value = g.p; $("#g-c").value = g.c; $("#g-f").value = g.f; $("#g-weight").value = g.weight;
+  $("#g-age").value = prof.age == null ? "" : prof.age;
+  $("#g-sex").value = prof.sex || "";
+  var demo = demoOf(prof);
+  $("#g-demo").textContent = demo.assumed ? ("Set " + prof.name + "'s age for accurate targets. Adult male values are used until then.") : ("Nutrient targets use " + (demo.sex === "female" ? "female" : "male") + ", age " + demo.age + ".");
   $("#s-online").checked = !!state.settings.online; $("#s-key").value = state.settings.fdcKey || "";
   checkGoals();
 }
@@ -672,6 +828,8 @@ $("#goals-form").addEventListener("submit", function (e) {
   e.preventDefault();
   var prof = current();
   ["kcal", "p", "c", "f", "weight"].forEach(function (k) { var v = parseFloat($("#g-" + k).value); if (v >= 0) prof.goals[k] = v; });
+  prof.age = copyAge($("#g-age").value);
+  prof.sex = copySex($("#g-sex").value);
   save(); renderAll(); $("#g-saved").textContent = "Saved for " + prof.name + "."; setTimeout(function () { $("#g-saved").textContent = ""; }, 2000);
 });
 $("#g-reset").addEventListener("click", function () {
@@ -741,7 +899,7 @@ function exportBackup() {
       if (p.lock && p.lock.enabled && !p.lock.pending) {
         if (!include[p.id]) return Promise.resolve(null);
         if (hasKey(p.id)) {
-          return window.CadenceLock.seal(sessionKeys[p.id], { foods: p.foods, weights: p.weights, goals: copyGoals(p.goals) }).then(function (sealed) {
+          return window.CadenceLock.seal(sessionKeys[p.id], { foods: p.foods, weights: p.weights, goals: copyGoals(p.goals), age: p.age, sex: p.sex }).then(function (sealed) {
             var lock = JSON.parse(JSON.stringify(p.lock));
             lock.sealed = sealed;
             return { id: p.id, name: p.name, color: p.color, lock: lock };
@@ -749,13 +907,13 @@ function exportBackup() {
         }
         return Promise.resolve({ id: p.id, name: p.name, color: p.color, lock: JSON.parse(JSON.stringify(p.lock)) });
       }
-      var o = { id: p.id, name: p.name, color: p.color, foods: p.foods, weights: p.weights, goals: p.goals };
+      var o = { id: p.id, name: p.name, color: p.color, age: p.age, sex: p.sex, foods: p.foods, weights: p.weights, goals: p.goals };
       if (p.lock) o.lock = JSON.parse(JSON.stringify(p.lock));
       return Promise.resolve(o);
     });
     return Promise.all(tasks).then(function (rows) {
       var data = {
-        exportedAt: new Date().toISOString(), app: "Cadence", version: 2,
+        exportedAt: new Date().toISOString(), app: "Cadence", version: 3,
         activeProfileId: state.activeProfileId, profiles: rows.filter(Boolean), recipes: state.recipes, settings: state.settings
       };
       if (skipped.length) data.omittedProfiles = skipped.map(function (name) {

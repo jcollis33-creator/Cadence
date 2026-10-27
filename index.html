@@ -48,7 +48,12 @@
       <div class="pill" id="kcal-left"></div>
     </div>
   </div>
+  <div class="toggle" id="today-mode" role="tablist" aria-label="Today detail">
+    <button type="button" class="active" data-nut="macros">Macros</button>
+    <button type="button" data-nut="nutrients">Nutrients</button>
+  </div>
   <div class="card" id="macro-bars"></div>
+  <div class="card" id="nutrient-panel" hidden></div>
   <div class="card">
     <div class="card-head"><h2>Today's food</h2><button class="link" data-goto="food">+ Log food</button></div>
     <ul class="entries" id="today-entries"></ul>
@@ -160,6 +165,12 @@
       <label>Fat (g)<input id="g-f" type="number" min="0" step="1" inputmode="numeric"></label>
     </div>
     <div class="hint" id="g-check"></div>
+    <h2>For nutrient targets</h2>
+    <div class="grid2">
+      <label>Age<input id="g-age" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="Years"></label>
+      <label>Sex<select id="g-sex"><option value="">Not set</option><option value="female">Female</option><option value="male">Male</option></select></label>
+    </div>
+    <p class="hint" id="g-demo"></p>
     <h2>Body weight goal</h2>
     <label>Goal weight (lb)<input id="g-weight" type="number" min="50" max="700" step="0.5" inputmode="decimal"></label>
     <div class="row end"><button class="btn ghost" type="button" id="g-reset">Reset defaults</button><button class="btn" type="submit">Save goals</button></div>

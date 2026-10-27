@@ -33,7 +33,7 @@ The header shows who is logging: a small avatar and name. Tap it to switch, add,
 
 Food logs, daily goals (calories, protein, carbs, fat, and goal weight), and weigh-ins belong to the active profile. Today, Food, Weight, and Goals show only that person's numbers. Recipes are a shared household library. Logging a serving writes into the active profile's food log. The USDA API key and the online-lookup switch stay global.
 
-An older `cadence.v1` save is copied into Joseph's profile the first time this version loads. Nothing is dropped. The `cadence.v1` key is left in place as a backup. The working copy is `cadence.v2`: `{ version, activeProfileId, profiles: [{ id, name, color, foods, weights, goals, lock }], recipes, settings }`.
+An older `cadence.v1` save is copied into Joseph's profile the first time a profiles build loads. Nothing is dropped. The `cadence.v1` key is left in place as a backup. The working copy is now `cadence.v3`: `{ version, activeProfileId, profiles: [{ id, name, color, age, sex, foods, weights, goals, lock }], recipes, settings }`. A `cadence.v2` save is migrated forward and that key is kept too. Food entries gain a `micros` object when they are logged; older entries are left as they were.
 
 Removing a profile asks first. Removing Joseph names the entries that would be deleted.
 
@@ -54,11 +54,23 @@ The lock closes when you switch to someone else, when the page is reloaded or re
 
 This is a casual privacy lock for a shared phone, not real security. The PIN is short, and anyone who can open developer tools or copy this browser's `localStorage` can attack it offline. Encryption stops a casual glance at the saved JSON. It does not stop someone with the device and enough time.
 
+## Micronutrients
+
+Today, and each day in the Food log, has a **Macros / Nutrients** switch. Nutrients shows fiber, total sugar, sodium, potassium, calcium, iron, magnesium, and vitamins A, C, D, and B12 for that day, with a bar for the percent of the target.
+
+Targets follow NIH Office of Dietary Supplements and National Academies DRIs (RDA or Adequate Intake) and depend on the age and sex set on that profile's Goals screen. Joseph starts as an adult man and Cindy as an adult woman. Leo's age is not set; the app asks you to set it and uses adult-male targets until you do. Sodium uses the chronic disease risk reduction intake as an upper target (2,300 mg from age 14, lower for children) and turns the bar amber when you go over. Sugar uses the FDA 50 g Daily Value for added sugar, but the food value is **total** sugar.
+
+Built-in foods carry USDA FoodData Central values (SR Legacy April 2018, Foundation Foods April 2026, or FNDDS 2021–2023), scaled to the listed serving. Each food records its `fdcId`. A `0` was reported as zero. `null` means that nutrient was not in the matched entry. Two foods have no defensible composed entry, so every nutrient is null: dressed Caesar salad, and balsamic vinaigrette. Online USDA matches store the same nutrients (numbers 291, 269, 307, 306, 301, 303, 304, 320, 401, 328, 418).
+
+Recipes sum those values into the batch and into each serving. A day that still has an entry from before this update (no `micros` field) says **Incomplete — some entries logged before nutrient tracking**. Those entries are left out of the totals. A nutrient that is missing on only some foods is marked incomplete instead of being shown as zero.
+
+The working save is `cadence.v3`. A previous `cadence.v2` key is kept. Export includes `micros` and still accepts older backups.
+
 ## How nutrition lookup works
 
 1. The parser splits phrases on commas, "and", "with", "plus" and similar words. It keeps dishes such as "mac and cheese", "PB&J" and "coffee with milk" together.
    - It understands numbers and number words, "a/an", "half", fractions ("1 1/2"), "a dozen", and units (g, oz, lb, cup, tbsp, tsp, slice, scoop, serving, bowl…).
-2. It then looks in the built-in list of about 240 common foods (`js/foods.js`). Values are approximate and based on USDA FoodData Central typical servings.
+2. It then looks in the built-in list of about 240 common foods (`js/foods.js`). Calories and macros are the previous serving values, except a few that clearly disagreed with the matched USDA entry. Micronutrients are the matched FoodData Central values for that serving.
 3. If there's no good match and **Online lookup** is on, Cadence asks the **USDA FoodData Central** search API.
    - It uses the shared `DEMO_KEY`. That key is rate-limited per IP address (USDA says roughly 30 requests an hour and 50 a day), so heavy use will hit "rate limit reached".
    - A free personal key fixes this: get one at <https://fdc.nal.usda.gov/api-key-signup> and paste it in **Goals › Food lookup**.
@@ -84,7 +96,7 @@ When the mic button does work, Cadence logs the item as soon as you stop speakin
 
 ## Your data
 
-- Everything is saved in your browser's `localStorage` under the key `cadence.v2` (see Profiles). A previous `cadence.v1` value is kept as a backup and is not deleted.
+- Everything is saved in your browser's `localStorage` under the key `cadence.v3` (see Profiles and Micronutrients). Previous `cadence.v2` and `cadence.v1` values are kept as backups and are not deleted.
 - Data is **per device and per browser**. Your phone and laptop don't sync. Cindy's log on Joseph's phone is not on Cindy's phone. Clearing site data or private browsing erases it, and the file:// copy and the https:// copy of Cadence don't share data.
 - Use **Goals › Export JSON** to make a backup or move devices, then **Import JSON** on the other device. A v2 import replaces profiles (profiles left out of a partial export are kept if they are still on this device). A v1 import replaces the open profile's food, weight, and goals, plus the shared recipes and settings.
 

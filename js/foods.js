@@ -1,267 +1,260 @@
 /* Cadence bundled food list.
- * Values are approximate, based on USDA FoodData Central (SR Legacy / FNDDS) and
- * common package labels. Macros are for the listed serving.
- * Row: [name, "alias|alias", serving label, serving grams, grams per cup (0 = n/a),
- *       grams per piece/each (0 = same as serving), kcal, protein g, carbs g, fat g]
+ * Macros stay at the previous per-serving values, except where they clearly disagreed with the
+ * matched entry (turkey bacon, breakfast burrito, pulled pork, chicken broth, meatballs).
+ * Micronutrients are scaled to the serving
+ * grams from USDA FoodData Central: SR Legacy (April 2018), Foundation Foods (April 2026),
+ * or FNDDS 2021-2023. Each matched fdcId is in the row and the comment.
+ * A stored 0 is a measured zero. null means that nutrient was not reported for the match.
+ * Row: [name, aliases, serving label, serving grams, grams per cup (0 = n/a),
+ *       grams per piece (0 = same as serving), kcal, protein g, carbs g, fat g,
+ *       fdcId or null, micros]
  */
 (function (root) {
 var ROWS = [
-// ---- Eggs & breakfast
-["Egg","egg|eggs|large egg|boiled egg|hard boiled egg|poached egg|scrambled egg|scrambled eggs","1 large egg",50,243,0,72,6.3,0.4,4.8],
-["Fried egg","fried egg|over easy egg|sunny side up egg","1 large egg",46,0,0,90,6.3,0.4,6.8],
-["Egg white","egg white|egg whites","1 large white",33,243,0,17,3.6,0.2,0.1],
-["Bacon","bacon|bacon strip|strip of bacon|slice of bacon","1 slice cooked",8,0,0,43,3,0.1,3.3],
-["Turkey bacon","turkey bacon","1 slice cooked",15,0,0,38,4.2,0.4,2.1],
-["Breakfast sausage","sausage|sausage link|breakfast sausage|sausage patty","1 link",25,0,0,85,4.6,0.4,7],
-["Pancake","pancake|pancakes|flapjack","1 pancake (6 in)",77,0,0,175,4.9,22,7.4],
-["Waffle","waffle|waffles|eggo","1 waffle (7 in)",75,0,0,218,5.9,25,10.6],
-["French toast","french toast","1 slice",65,0,0,149,5,16.3,7],
-["Hash browns","hash brown|hash browns|hashbrown|hashbrowns","1 patty",53,156,0,140,1.3,15,8],
-["Oatmeal (cooked)","oatmeal|oats|porridge|bowl of oatmeal|cooked oatmeal","1 cup cooked",234,234,0,166,5.9,28,3.6],
-["Rolled oats (dry)","rolled oats|dry oats|old fashioned oats|quick oats","1/2 cup dry",40,80,0,150,5,27,3],
-["Instant oatmeal packet","instant oatmeal|oatmeal packet|packet of oatmeal","1 packet",43,0,0,160,4,32,2],
-["Cereal","cereal|cheerios|corn flakes|bowl of cereal","1 cup",28,28,0,104,3.4,20.5,1.8],
-["Granola","granola","1/2 cup",60,120,0,280,7,38,12],
-["Granola bar","granola bar|chewy bar|cereal bar","1 bar",24,0,0,100,1.5,18,3],
-["Protein bar","protein bar|quest bar|clif builder","1 bar",60,0,0,210,20,23,7],
-["Egg McMuffin","egg mcmuffin|mcmuffin|breakfast sandwich|egg sandwich","1 sandwich",137,0,0,310,17,30,13],
-["Bacon egg and cheese","bacon egg and cheese|bacon egg & cheese|bec|bacon egg cheese sandwich","1 sandwich",160,0,0,450,20,35,25],
-["Breakfast burrito","breakfast burrito","1 burrito",200,0,0,400,17,35,21],
-// ---- Breads & grains
-["Toast / white bread","toast|bread|white bread|white toast|slice of bread|slice of toast|piece of toast","1 slice",29,0,0,77,2.6,14.3,1],
-["Whole wheat bread","whole wheat bread|wheat bread|wheat toast|whole wheat toast|whole grain bread|multigrain bread","1 slice",32,0,0,81,4,13.8,1.1],
-["Sourdough bread","sourdough|sourdough bread|sourdough toast","1 slice",36,0,0,98,4,19,0.6],
-["Bagel","bagel|plain bagel","1 bagel",105,0,0,277,11,55,1.4],
-["English muffin","english muffin","1 muffin",57,0,0,134,4.4,26,1],
-["Flour tortilla","tortilla|flour tortilla|wrap","1 tortilla (8 in)",49,0,0,146,3.9,24,3.7],
-["Corn tortilla","corn tortilla","1 tortilla (6 in)",26,0,0,57,1.5,12,0.7],
-["Pita","pita|pita bread","1 pita (6.5 in)",60,0,0,165,5.5,33,0.7],
-["Croissant","croissant","1 medium",57,0,0,231,4.7,26,12],
-["Muffin","muffin|blueberry muffin","1 medium",113,0,0,420,6,57,19],
-["Hamburger bun","bun|hamburger bun|hot dog bun|roll|dinner roll","1 bun",44,0,0,120,4,21,1.9],
-["White rice (cooked)","rice|white rice|steamed rice|jasmine rice|basmati rice|cooked rice","1 cup cooked",158,158,0,205,4.3,45,0.4],
-["Brown rice (cooked)","brown rice","1 cup cooked",195,195,0,216,5,45,1.8],
-["Uncooked white rice","uncooked rice|dry rice|raw rice|uncooked white rice","1 cup dry",185,185,0,675,13.2,148,1.2],
-["Pasta (cooked)","pasta|spaghetti|noodles|penne|macaroni|cooked pasta","1 cup cooked",140,140,0,220,8.1,43,1.3],
-["Dry pasta","dry pasta|uncooked pasta","2 oz dry",56,0,0,200,7,42,1],
-["Quinoa (cooked)","quinoa","1 cup cooked",185,185,0,222,8.1,39,3.6],
-["Couscous (cooked)","couscous","1 cup cooked",157,157,0,176,6,36,0.3],
-["All-purpose flour","flour|all purpose flour|white flour","1 cup",125,125,0,455,12.9,95.4,1.2],
-["Crackers","cracker|crackers|ritz","5 crackers",16,0,3.2,80,1,10,4.5],
-["Saltine crackers","saltine|saltines","5 crackers",15,0,3,63,1.4,11,1.3],
-["Popcorn (air-popped)","popcorn","1 cup popped",8,8,0,31,1,6.2,0.4],
-// ---- Poultry, meat, fish
-["Chicken breast (cooked)","chicken breast|chicken|grilled chicken|chicken breasts|baked chicken|rotisserie chicken","3 oz cooked",85,140,172,140,26.4,0,3.1],
-["Chicken thigh (cooked)","chicken thigh|chicken thighs","3 oz cooked",85,140,52,178,22,0,9.3],
-["Chicken wing","chicken wing|wing|wings|buffalo wing|hot wing","1 wing",34,0,0,99,9.1,0,6.6],
-["Chicken nuggets","chicken nugget|nugget|nuggets|chicken nuggets","1 nugget",16,0,0,47,2.3,2.8,2.9],
-["Chicken tenders (breaded)","chicken tender|chicken tenders|chicken strip|chicken strips|chicken finger","1 tender",45,0,0,120,8,7,7],
-["Fried chicken","fried chicken","1 breast piece",160,0,0,390,35,12,22],
-["Ground beef 85/15 (cooked)","ground beef|hamburger meat|beef|minced beef","3 oz cooked",85,0,0,215,22,0,13],
-["Ground turkey (cooked)","ground turkey|turkey burger patty","3 oz cooked",85,0,0,170,23,0,8],
-["Turkey breast (roasted)","turkey|turkey breast|roast turkey","3 oz",85,0,0,125,25.6,0,1.8],
-["Sirloin steak (cooked)","steak|sirloin|sirloin steak|top sirloin|filet|filet mignon","3 oz cooked",85,0,0,180,26,0,8],
-["Ribeye steak (cooked)","ribeye|rib eye|ribeye steak","3 oz cooked",85,0,0,250,22,0,18],
-["Pork chop (cooked)","pork chop|pork|pork loin|pork tenderloin","3 oz cooked",85,0,0,180,25,0,8],
-["Pulled pork","pulled pork|bbq pork","1/2 cup",70,140,0,165,15,6,9],
-["Ham (deli)","ham|deli ham|sliced ham","2 oz",56,0,28,61,9.4,1.5,1.6],
-["Turkey (deli)","deli turkey|turkey slices|sliced turkey|lunch meat|lunchmeat","2 oz",56,0,28,60,10,2,1],
-["Hot dog in bun","hot dog|hotdog|hot dogs","1 hot dog with bun",89,0,0,270,9,24,15],
-["Hot dog frank (no bun)","frank|frankfurter|wiener","1 frank",45,0,0,151,5.2,1.6,13.5],
-["Pepperoni","pepperoni","1 oz",28,0,2,138,6,0.3,12.4],
-["Beef jerky","jerky|beef jerky","1 oz",28,0,0,116,9.4,3.1,7.3],
-["Salmon (cooked)","salmon|grilled salmon|baked salmon|salmon fillet","3 oz cooked",85,0,170,175,19,0,10.5],
-["Tuna (canned in water)","tuna|canned tuna|tuna fish|can of tuna","3 oz drained",85,0,142,99,22,0,0.7],
-["Shrimp (cooked)","shrimp|prawns|prawn","3 oz cooked",85,0,6,84,20,0.2,0.2],
-["Tilapia (cooked)","tilapia|white fish|fish","3 oz cooked",85,0,0,109,22,0,2.3],
-["Cod (cooked)","cod","3 oz cooked",85,0,0,89,19,0,0.7],
-// ---- Plant protein / legumes
-["Tofu (firm)","tofu|firm tofu","1/2 cup",126,252,0,181,21.8,3.5,11],
-["Black beans (cooked)","black beans|beans|black bean","1 cup",172,172,0,227,15.2,40.8,0.9],
-["Pinto beans (cooked)","pinto beans|pinto bean","1 cup",171,171,0,245,15.4,44.8,1.1],
-["Kidney beans (cooked)","kidney beans|kidney bean|red beans","1 cup",177,177,0,225,15.3,40.4,0.9],
-["Chickpeas (cooked)","chickpeas|chickpea|garbanzo beans","1 cup",164,164,0,269,14.5,45,4.2],
-["Lentils (cooked)","lentils|lentil","1 cup",198,198,0,230,17.9,39.9,0.8],
-["Refried beans","refried beans","1/2 cup",121,242,0,110,6,18,1.5],
-["Edamame","edamame","1 cup",155,155,0,188,18.4,13.8,8.1],
-["Hummus","hummus","2 tbsp",30,246,0,70,2,4,5],
-// ---- Shakes & supplements
-["Protein shake (whey, water)","protein shake|protein powder|whey|whey protein|scoop of protein|shake|protein","1 scoop",31,0,0,120,24,3,1.5],
-["Premade protein shake","premier protein|fairlife shake|core power|ready to drink protein shake","1 bottle (11 oz)",325,0,0,160,30,5,3],
-// ---- Dairy
-["Milk (2%)","milk|2% milk|two percent milk|reduced fat milk","1 cup",244,244,0,122,8.1,11.7,4.8],
-["Whole milk","whole milk","1 cup",244,244,0,149,7.7,11.7,7.9],
-["Skim milk","skim milk|nonfat milk|fat free milk","1 cup",245,245,0,83,8.3,12.2,0.2],
-["Chocolate milk","chocolate milk","1 cup",250,250,0,190,7.5,30,4.8],
-["Almond milk (unsweetened)","almond milk","1 cup",240,240,0,30,1,1,2.5],
-["Oat milk","oat milk|oatly","1 cup",240,240,0,120,3,16,5],
-["Greek yogurt (nonfat, plain)","greek yogurt|yogurt|plain greek yogurt|nonfat greek yogurt|chobani|fage","1 container (170 g)",170,245,0,100,17.3,6.1,0.7],
-["Flavored yogurt","flavored yogurt|fruit yogurt|strawberry yogurt|vanilla yogurt","1 container (170 g)",170,245,0,150,6,25,2.5],
-["Cottage cheese (2%)","cottage cheese","1/2 cup",113,226,0,92,12,4.8,2.6],
-["Cheddar cheese","cheese|cheddar|cheddar cheese|shredded cheese","1 oz",28,113,28,113,7,0.4,9.3],
-["American cheese","american cheese|cheese slice|slice of cheese|kraft single","1 slice",21,0,0,65,3.5,1.5,5],
-["Mozzarella","mozzarella|mozzarella cheese","1 oz",28,113,28,85,6.3,0.6,6.3],
-["String cheese","string cheese|cheese stick","1 stick",28,0,0,80,7,1,6],
-["Parmesan (grated)","parmesan|parmesan cheese|parm","1 tbsp",5,80,0,21,1.9,0.2,1.4],
-["Feta","feta|feta cheese","1 oz",28,150,0,75,4,1.2,6],
-["Cream cheese","cream cheese","1 tbsp",14.5,232,0,51,0.9,0.8,5],
-["Butter","butter|pat of butter","1 tbsp",14.2,227,5,102,0.1,0,11.5],
-["Sour cream","sour cream","2 tbsp",24,230,0,47,0.6,1.1,4.6],
-["Heavy cream","heavy cream|whipping cream|cream","1 tbsp",15,238,0,51,0.4,0.4,5.4],
-["Half and half","half and half|half & half","1 tbsp",15,242,0,20,0.5,0.6,1.7],
-["Ice cream","ice cream|scoop of ice cream","1/2 cup",66,132,66,137,2.3,15.6,7.3],
-// ---- Fruit
-["Banana","banana|bananas","1 medium",118,150,0,105,1.3,27,0.4],
-["Apple","apple|apples","1 medium",182,125,0,95,0.5,25,0.3],
-["Orange","orange|oranges","1 medium",131,180,0,62,1.2,15.4,0.2],
-["Clementine","clementine|cutie|mandarin|tangerine","1 fruit",74,0,0,35,0.6,8.9,0.1],
-["Strawberries","strawberry|strawberries","1 cup",152,152,12,49,1,11.7,0.5],
-["Blueberries","blueberry|blueberries","1 cup",148,148,0,84,1.1,21.4,0.5],
-["Raspberries","raspberry|raspberries","1 cup",123,123,0,64,1.5,14.7,0.8],
-["Grapes","grape|grapes","1 cup",151,151,5,104,1.1,27.3,0.2],
-["Avocado","avocado|avocados","1 medium",150,150,0,240,3,12.8,22],
-["Watermelon","watermelon","1 cup diced",152,152,286,46,0.9,11.5,0.2],
-["Cantaloupe","cantaloupe|melon","1 cup diced",160,160,0,54,1.3,13,0.3],
-["Pineapple","pineapple","1 cup chunks",165,165,0,82,0.9,21.6,0.2],
-["Mango","mango","1 cup sliced",165,165,336,99,1.4,24.7,0.6],
-["Peach","peach|peaches","1 medium",150,154,0,59,1.4,14.3,0.4],
-["Pear","pear|pears","1 medium",178,140,0,101,0.6,27,0.2],
-["Cherries","cherry|cherries","1 cup",138,138,8,87,1.5,22,0.3],
-["Kiwi","kiwi|kiwifruit","1 fruit",69,180,0,42,0.8,10,0.4],
-["Raisins","raisin|raisins","1/4 cup",40,160,0,120,1.2,31.7,0.2],
-["Medjool date","date|dates|medjool date","1 date",24,0,0,66,0.4,18,0],
-["Fruit cup / mixed fruit","fruit|mixed fruit|fruit salad|fruit cup","1 cup",150,150,0,75,1,19,0.3],
-// ---- Vegetables
-["Side salad (no dressing)","salad|side salad|green salad|garden salad|mixed greens|greens","1 side salad",100,50,0,20,1.3,3.5,0.2],
-["Caesar salad (side, dressed)","caesar salad|caesar","1 side salad",100,0,0,190,4,8,16],
-["Grilled chicken salad","chicken salad bowl|grilled chicken salad|chicken caesar salad","1 entree salad",350,0,0,400,35,14,22],
-["Lettuce","lettuce|romaine|iceberg","1 cup shredded",47,47,0,7,0.6,1.4,0.1],
-["Spinach (raw)","spinach","1 cup",30,30,0,7,0.9,1.1,0.1],
-["Kale (raw)","kale","1 cup chopped",21,21,0,7,0.6,0.9,0.3],
-["Broccoli (cooked)","broccoli","1 cup",156,156,0,55,3.7,11.2,0.6],
-["Cauliflower (cooked)","cauliflower","1 cup",124,124,0,28,2.3,5.1,0.6],
-["Brussels sprouts","brussels sprouts|brussel sprouts","1 cup",156,156,0,56,4,11,0.8],
-["Green beans","green beans|string beans","1 cup",125,125,0,44,2.4,9.9,0.4],
-["Peas","peas|green peas","1 cup",160,160,0,134,8.6,25,0.4],
-["Corn","corn|sweet corn|corn on the cob|ear of corn","1 cup",145,145,90,139,4.9,30.4,2.2],
-["Carrot","carrot|carrots|baby carrots","1 medium",61,128,0,25,0.6,5.8,0.1],
-["Tomato","tomato|tomatoes","1 medium",123,180,0,22,1.1,4.8,0.2],
-["Cucumber","cucumber","1/2 cup sliced",52,104,301,8,0.3,1.9,0.1],
-["Bell pepper","bell pepper|pepper|red pepper|green pepper","1 medium",119,149,0,31,1,6,0.4],
-["Onion","onion|onions","1 medium",110,160,0,44,1.2,10.3,0.1],
-["Garlic","garlic|garlic clove|clove of garlic|cloves of garlic","1 clove",3,136,0,4,0.2,1,0],
-["Mushrooms","mushroom|mushrooms","1 cup raw",70,70,0,15,2.2,2.3,0.2],
-["Zucchini","zucchini","1 cup cooked",180,180,196,27,2,4.8,0.7],
-["Asparagus","asparagus","1 cup",180,180,15,40,4.3,7.4,0.4],
-["Celery","celery","1 stalk",40,101,0,6,0.3,1.2,0.1],
-["Potato (baked)","potato|baked potato|potatoes","1 medium",173,122,0,161,4.3,36.6,0.2],
-["Sweet potato (baked)","sweet potato|yam","1 medium",114,200,0,103,2.3,23.6,0.2],
-["Mashed potatoes","mashed potatoes|mashed potato","1 cup",210,210,0,237,4,35,9],
-["French fries","fries|french fries|chips side","1 medium order",117,0,0,365,4.4,48,17],
-["Pickle","pickle|pickles","1 spear",35,0,0,4,0.2,0.8,0.1],
-["Salsa","salsa","2 tbsp",32,259,0,10,0.5,2,0],
-["Guacamole","guacamole|guac","2 tbsp",30,240,0,47,0.6,2.6,4.4],
-// ---- Nuts, seeds, fats, dressings
-["Peanut butter","peanut butter|pb","2 tbsp",32,258,0,190,7,7,16],
-["Almond butter","almond butter","2 tbsp",32,258,0,196,6.7,6,17.8],
-["Almonds","almond|almonds","1 oz (~23 nuts)",28,143,1.2,164,6,6.1,14.2],
-["Peanuts","peanut|peanuts","1 oz",28,146,0,166,6.7,6.1,14],
-["Cashews","cashew|cashews","1 oz",28,137,0,157,5.2,8.6,12.4],
-["Walnuts","walnut|walnuts","1 oz",28,117,0,185,4.3,3.9,18.5],
-["Mixed nuts","nuts|mixed nuts|trail mix","1 oz",28,140,0,172,5,7,15],
-["Sunflower seeds","sunflower seeds","1 oz",28,140,0,165,5.5,6.8,14],
-["Chia seeds","chia|chia seeds","1 tbsp",12,168,0,58,2,5,3.7],
-["Ground flaxseed","flax|flaxseed|ground flaxseed|flax seed","1 tbsp",7,112,0,37,1.3,2,3],
-["Olive oil","olive oil|evoo","1 tbsp",13.5,216,0,119,0,0,13.5],
-["Vegetable oil","oil|vegetable oil|canola oil|cooking oil","1 tbsp",14,218,0,124,0,0,14],
-["Coconut oil","coconut oil","1 tbsp",13.6,218,0,121,0,0,13.5],
-["Mayonnaise","mayo|mayonnaise","1 tbsp",13.8,220,0,94,0.1,0.1,10.3],
-["Ranch dressing","ranch|ranch dressing","2 tbsp",30,240,0,129,0.4,1.8,13.4],
-["Italian dressing","italian dressing|dressing|salad dressing","2 tbsp",29,232,0,71,0.1,3.5,6.2],
-["Balsamic vinaigrette","balsamic|balsamic vinaigrette|vinaigrette","2 tbsp",30,240,0,90,0,4,8],
-// ---- Sauces, condiments, sweeteners, baking
-["Ketchup","ketchup|catsup","1 tbsp",17,240,0,17,0.2,4.7,0],
-["Mustard","mustard","1 tsp",5,250,0,3,0.2,0.3,0.2],
-["BBQ sauce","bbq sauce|barbecue sauce","2 tbsp",36,286,0,62,0.3,15,0.2],
-["Soy sauce","soy sauce|soy","1 tbsp",16,255,0,9,1.3,0.8,0.1],
-["Hot sauce","hot sauce|sriracha|tabasco","1 tsp",5,0,0,1,0,0.1,0],
-["Marinara sauce","marinara|marinara sauce|pasta sauce|spaghetti sauce","1/2 cup",125,250,0,62,2,10,2],
-["Tomato sauce (canned)","tomato sauce","1 cup",245,245,0,59,2.9,13,0.7],
-["Diced tomatoes (canned)","diced tomatoes|canned tomatoes|crushed tomatoes|can of tomatoes","1 cup",240,240,411,43,2,9.6,0.3],
-["Chicken broth","chicken broth|broth|stock|chicken stock|beef broth","1 cup",240,240,0,15,1.6,1.1,0.5],
-["Sugar","sugar|white sugar|brown sugar","1 tsp",4.2,200,0,16,0,4.2,0],
-["Honey","honey","1 tbsp",21,339,0,64,0.1,17.3,0],
-["Maple syrup","maple syrup|syrup|pancake syrup","1 tbsp",20,315,0,52,0,13.4,0],
-["Jam / jelly","jam|jelly|preserves","1 tbsp",20,320,0,56,0.1,13.8,0],
-["Salt","salt","1 tsp",6,288,0,0,0,0,0],
-["Black pepper","black pepper|ground pepper","1 tsp",2.3,0,0,6,0.2,1.5,0.1],
-["Chili powder","chili powder","1 tsp",2.7,0,0,8,0.4,1.4,0.4],
-["Cumin","cumin","1 tsp",2,0,0,8,0.4,0.9,0.4],
-["Cinnamon","cinnamon","1 tsp",2.6,0,0,6,0.1,2.1,0],
-// ---- Drinks
-["Coffee (black)","coffee|black coffee|cup of coffee|cold brew|iced coffee|americano|espresso","1 cup (8 oz)",237,237,0,2,0.3,0,0],
-["Coffee with milk","coffee with milk|coffee with a splash of milk","1 cup + 2 tbsp milk",267,0,0,17,1.3,1.5,0.6],
-["Coffee with cream and sugar","coffee with cream and sugar|coffee with cream|coffee with sugar","1 cup",255,0,0,55,0.5,8.5,2],
-["Latte (2% milk)","latte|caffe latte|grande latte","16 oz",480,240,0,190,13,19,7],
-["Cappuccino (2% milk)","cappuccino","16 oz",480,240,0,140,10,14,5],
-["Tea","tea|green tea|black tea|hot tea|iced tea unsweetened","1 cup",237,237,0,2,0,0.7,0],
-["Sweet tea","sweet tea","16 oz",480,240,0,180,0,45,0],
-["Soda","soda|coke|pepsi|sprite|pop|coca cola|dr pepper|mountain dew","1 can (12 oz)",368,245,0,140,0,39,0],
-["Diet soda","diet soda|diet coke|coke zero|diet pepsi|zero sugar soda","1 can (12 oz)",355,0,0,0,0,0,0],
-["Water","water|sparkling water|seltzer|la croix","1 cup",237,237,0,0,0,0,0],
-["Orange juice","orange juice|oj","1 cup",248,248,0,112,1.7,25.8,0.5],
-["Apple juice","apple juice|juice","1 cup",248,248,0,114,0.2,28,0.3],
-["Sports drink","gatorade|powerade|sports drink","1 bottle (20 oz)",591,240,0,140,0,36,0],
-["Energy drink","energy drink|monster|red bull","1 can (16 oz)",473,240,0,210,0,54,0],
-["Fruit smoothie","smoothie|fruit smoothie","16 oz",480,240,0,270,4,64,1],
-["Beer","beer|beers|lager|bud|budweiser|pint","1 can (12 oz)",356,0,0,153,1.6,12.6,0],
-["Light beer","light beer|bud light|miller lite|coors light|michelob ultra","1 can (12 oz)",356,0,0,103,0.9,5.8,0],
-["IPA beer","ipa|craft beer","1 can (12 oz)",356,0,0,200,2,18,0],
-["Red wine","wine|red wine|glass of wine","1 glass (5 oz)",147,0,0,125,0.1,3.8,0],
-["White wine","white wine","1 glass (5 oz)",147,0,0,121,0.1,3.8,0],
-["Liquor shot","shot|vodka|whiskey|bourbon|tequila|rum|gin","1 shot (1.5 oz)",42,0,0,97,0,0,0],
-["Margarita","margarita","1 drink",200,0,0,275,0.3,36,0.2],
-// ---- Prepared / fast food
-["Burger (1/4 lb, on bun)","burger|hamburger|cheeseburger patty|quarter pounder|beef burger","1 burger",200,0,0,450,25,40,20],
-["Cheeseburger (1/4 lb)","cheeseburger|cheese burger","1 burger",220,0,0,520,30,42,26],
-["Chicken sandwich (fast food)","chicken sandwich|crispy chicken sandwich|chick fil a sandwich","1 sandwich",200,0,0,450,28,45,18],
-["Turkey sandwich","turkey sandwich|sandwich","1 sandwich",220,0,0,350,22,40,10],
-["Ham and cheese sandwich","ham and cheese sandwich|ham and cheese|ham sandwich","1 sandwich",200,0,0,360,21,36,15],
-["PB&J sandwich","pb&j|pbj|peanut butter and jelly|peanut butter and jelly sandwich|pb and j","1 sandwich",100,0,0,350,12,45,15],
-["Grilled cheese","grilled cheese|grilled cheese sandwich","1 sandwich",120,0,0,380,14,32,22],
-["Sub sandwich (6 in turkey)","sub|subway|sub sandwich|hoagie","1 6-inch sub",220,0,0,280,18,46,3.5],
-["Pizza slice (cheese)","pizza|cheese pizza|slice of pizza|pizza slice|slice","1 slice (14 in pie)",107,0,0,285,12.2,35.7,10.4],
-["Pizza slice (pepperoni)","pepperoni pizza","1 slice (14 in pie)",111,0,0,313,13,35.5,13.2],
-["Burrito","burrito|beef burrito|bean burrito|chicken burrito","1 burrito",300,0,0,480,20,60,18],
-["Burrito bowl","burrito bowl|chipotle bowl|rice bowl","1 bowl",450,0,0,650,40,70,22],
-["Taco","taco|tacos|hard taco|soft taco","1 taco",78,0,0,170,8,13,10],
-["Quesadilla","quesadilla|cheese quesadilla","1 (8 in)",180,0,0,470,19,38,27],
-["Nachos","nachos","1 plate",250,0,0,700,20,70,38],
-["California roll","sushi|california roll|sushi roll","1 roll (8 pc)",200,0,25,260,9,38,7],
-["Lasagna","lasagna|lasagne","1 piece",250,0,0,380,22,36,16],
-["Chili (beef and bean)","chili|chili con carne","1 cup",253,253,0,260,18,25,10],
-["Chicken noodle soup","soup|chicken noodle soup|chicken soup","1 cup",241,241,0,62,3.2,7.3,2.4],
-["Tomato soup","tomato soup","1 cup",248,248,0,74,2,16,0.7],
-["Mac and cheese","mac and cheese|mac n cheese|macaroni and cheese|kraft mac and cheese","1 cup",200,200,0,350,10,47,13],
-["Fried rice","fried rice","1 cup",198,198,0,238,5.6,45,4.1],
-["Spaghetti and meatballs","spaghetti and meatballs|spaghetti with meat sauce|spaghetti bolognese","1 plate (2 cups)",500,250,0,660,30,80,22],
-["Ramen (instant)","ramen|instant ramen|cup noodles|ramen noodles","1 package",81,0,0,380,8,52,14],
-["Meatballs","meatball|meatballs","1 meatball",30,0,0,60,4,2,4],
-// ---- Snacks & sweets
-["Potato chips","chips|potato chips|lays|bag of chips","1 oz (~15 chips)",28,0,0,152,2,15,10],
-["Tortilla chips","tortilla chips|doritos","1 oz",28,0,0,138,2,18,7],
-["Pretzels","pretzel|pretzels","1 oz",28,0,0,108,2.9,22.6,0.8],
-["Chocolate chip cookie","cookie|cookies|chocolate chip cookie","1 medium",16,0,0,78,0.9,10.3,3.9],
-["Brownie","brownie|brownies","1 square",56,0,0,227,2.7,36,9],
-["Glazed donut","donut|doughnut|glazed donut","1 medium",64,0,0,260,3,31,14],
-["Chocolate cake","cake|chocolate cake|slice of cake","1 slice",95,0,0,350,4,51,15],
-["Apple pie","pie|apple pie|slice of pie","1 slice",125,0,0,296,2.4,42.5,13.8],
-["Dark chocolate","dark chocolate","1 oz",28,0,0,170,2.2,13,12],
-["Milk chocolate bar","chocolate|chocolate bar|candy bar|hershey bar","1 bar (1.55 oz)",44,0,0,235,3.4,26,13]
+["Egg","egg|eggs|large egg|boiled egg|hard boiled egg|poached egg|scrambled egg|scrambled eggs","1 large egg",50,243,0,72,6.3,0.4,4.8,171287,{fiber:0,sugar:0.18,sodium:71,potassium:69,calcium:28,iron:0.88,magnesium:6,vita:80,vitc:0,vitd:1,b12:0.45}], // fdc 171287 Egg, whole, raw, fresh [SR Legacy]
+["Fried egg","fried egg|over easy egg|sunny side up egg","1 large egg",46,0,0,90,6.3,0.4,6.8,173423,{fiber:0,sugar:0.18,sodium:95.2,potassium:69.9,calcium:28.5,iron:0.87,magnesium:6,vita:100.74,vitc:0,vitd:1.01,b12:0.45}], // fdc 173423 Egg, whole, cooked, fried [SR Legacy]
+["Egg white","egg white|egg whites","1 large white",33,243,0,17,3.6,0.2,0.1,172183,{fiber:0,sugar:0.23,sodium:54.8,potassium:53.8,calcium:2.3,iron:0.03,magnesium:3.6,vita:0,vitc:0,vitd:0,b12:0.03}], // fdc 172183 Egg, white, raw, fresh [SR Legacy]
+["Bacon","bacon|bacon strip|strip of bacon|slice of bacon","1 slice cooked",8,0,0,43,3,0.1,3.3,167914,{fiber:0,sugar:0,sodium:175.4,potassium:43.1,calcium:0.8,iron:0.12,magnesium:2.4,vita:0.88,vitc:0,vitd:null,b12:0.09}], // fdc 167914 Pork, cured, bacon, cooked, baked [SR Legacy]
+["Turkey bacon","turkey bacon","1 slice cooked",15,0,0,55,4.4,0.6,3.9,2706135,{fiber:0,sugar:0.64,sodium:303,potassium:99.9,calcium:24.4,iron:0.39,magnesium:4.5,vita:2.85,vitc:0,vitd:0.18,b12:0.28}], // fdc 2706135 Turkey bacon, cooked [FNDDS]
+["Breakfast sausage","sausage|sausage link|breakfast sausage|sausage patty","1 link",25,0,0,85,4.6,0.4,7,174578,{fiber:0,sugar:0.27,sodium:203.5,potassium:85.5,calcium:2.2,iron:0.3,magnesium:4,vita:7,vitc:0,vitd:0.35,b12:0.24}], // fdc 174578 Pork sausage, link/patty, cooked, pan-fried [SR Legacy]
+["Pancake","pancake|pancakes|flapjack","1 pancake (6 in)",77,0,0,175,4.9,22,7.4,175009,{fiber:null,sugar:null,sodium:338,potassium:101.6,calcium:168.6,iron:1.39,magnesium:12.3,vita:41.58,vitc:0.23,vitd:null,b12:0.17}], // fdc 175009 Pancakes, plain, prepared from recipe [SR Legacy]
+["Waffle","waffle|waffles|eggo","1 waffle (7 in)",75,0,0,218,5.9,25,10.6,175038,{fiber:1.65,sugar:3.68,sodium:478.5,potassium:93.8,calcium:231,iron:4.21,magnesium:17.2,vita:285.75,vitc:0,vitd:null,b12:2.2}], // fdc 175038 Waffles, plain, frozen, ready-to-heat [SR Legacy]
+["French toast","french toast","1 slice",65,0,0,149,5,16.3,7,174998,{fiber:null,sugar:null,sodium:311.4,potassium:87.1,calcium:65,iron:1.09,magnesium:11.1,vita:80.6,vitc:0.2,vitd:null,b12:0.2}], // fdc 174998 French toast, prepared from recipe, made with low fat (2%) milk [SR Legacy]
+["Hash browns","hash brown|hash browns|hashbrown|hashbrowns","1 patty",53,156,0,140,1.3,15,8,173273,{fiber:1.43,sugar:0.3,sodium:300,potassium:188.2,calcium:10.1,iron:0.32,magnesium:11.1,vita:0,vitc:2.86,vitd:0,b12:0}], // fdc 173273 Fast foods, potatoes, hash browns, round pieces or patty [SR Legacy]
+["Oatmeal (cooked)","oatmeal|oats|porridge|bowl of oatmeal|cooked oatmeal","1 cup cooked",234,234,0,166,5.9,28,3.6,173905,{fiber:3.98,sugar:0.63,sodium:9.4,potassium:163.8,calcium:21.1,iron:2.11,magnesium:63.2,vita:0,vitc:0,vitd:0,b12:0}], // fdc 173905 Cereals, oats, regular and quick, unenriched, cooked with water (includes boiling and microwaving), without salt [SR Legacy]
+["Rolled oats (dry)","rolled oats|dry oats|old fashioned oats|quick oats","1/2 cup dry",40,80,0,150,5,27,3,173904,{fiber:4.04,sugar:0.4,sodium:2.4,potassium:144.8,calcium:20.8,iron:1.7,magnesium:55.2,vita:0,vitc:0,vitd:0,b12:0}], // fdc 173904 Cereals, oats, regular and quick, not fortified, dry [SR Legacy]
+["Instant oatmeal packet","instant oatmeal|oatmeal packet|packet of oatmeal","1 packet",43,0,0,160,4,32,2,173920,{fiber:3.1,sugar:13.02,sodium:217.2,potassium:155.2,calcium:110.9,iron:4.45,magnesium:38.7,vita:297.56,vitc:0,vitd:0,b12:0}], // fdc 173920 Cereals, oats, instant, fortified, maple and brown sugar, dry [SR Legacy]
+["Cereal","cereal|cheerios|corn flakes|bowl of cereal","1 cup",28,28,0,104,3.4,20.5,1.8,173884,{fiber:2.83,sugar:1.26,sodium:139.2,potassium:177.2,calcium:100,iron:8.09,magnesium:31.9,vita:277.2,vitc:5.99,vitd:1.01,b12:1.9}], // fdc 173884 Cereals ready-to-eat, GENERAL MILLS, CHEERIOS [SR Legacy]
+["Granola","granola","1/2 cup",60,120,0,280,7,38,12,171646,{fiber:5.34,sugar:11.88,sodium:15.6,potassium:323.4,calcium:45.6,iron:2.37,magnesium:100.8,vita:0.6,vitc:0.72,vitd:0,b12:0}], // fdc 171646 Cereals ready-to-eat, granola, homemade [SR Legacy]
+["Granola bar","granola bar|chewy bar|cereal bar","1 bar",24,0,0,100,1.5,18,3,167542,{fiber:1.27,sugar:6.86,sodium:70.6,potassium:80.6,calcium:14.6,iron:0.71,magnesium:23.3,vita:0.48,vitc:0.22,vitd:0,b12:0}], // fdc 167542 Snacks, granola bars, hard, plain [SR Legacy]
+["Protein bar","protein bar|quest bar|clif builder","1 bar",60,0,0,210,20,23,7,173158,{fiber:4.38,sugar:9.1,sodium:261.6,potassium:475.8,calcium:193.2,iron:3.24,magnesium:42.6,vita:234.6,vitc:16.74,vitd:0,b12:0.37}], // fdc 173158 Formulated Bar, SOUTH BEACH protein bar [SR Legacy] — formulated protein bar (South Beach), not a specific Quest or Clif bar
+["Egg McMuffin","egg mcmuffin|mcmuffin|breakfast sandwich|egg sandwich","1 sandwich",137,0,0,310,17,30,13,173307,{fiber:1.51,sugar:2.92,sodium:845.3,potassium:237,calcium:263,iron:3.15,magnesium:27.4,vita:null,vitc:1.64,vitd:null,b12:null}], // fdc 173307 McDONALD'S, Egg McMUFFIN [SR Legacy]
+["Bacon egg and cheese","bacon egg and cheese|bacon egg & cheese|bec|bacon egg cheese sandwich","1 sandwich",160,0,0,450,20,35,25,172029,{fiber:0.32,sugar:2.78,sodium:1305.6,potassium:209.6,calcium:164.8,iron:2.51,magnesium:24,vita:123.2,vitc:0,vitd:0.8,b12:1.38}], // fdc 172029 Fast foods, biscuit, with egg, cheese, and bacon [SR Legacy]
+["Breakfast burrito","breakfast burrito","1 burrito",200,0,0,554,22.2,45.9,31.3,170787,{fiber:2.4,sugar:5.14,sodium:1488,potassium:300,calcium:264,iron:4.56,magnesium:36,vita:158,vitc:1,vitd:1.6,b12:1.48}], // fdc 170787 Fast foods, breakfast burrito, with egg, cheese, and sausage [SR Legacy]
+["Toast / white bread","toast|bread|white bread|white toast|slice of bread|slice of toast|piece of toast","1 slice",29,0,0,77,2.6,14.3,1,174924,{fiber:0.78,sugar:1.64,sodium:142.1,potassium:36.5,calcium:41.8,iron:1.05,magnesium:6.7,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174924 Bread, white, commercially prepared (includes soft bread crumbs) [SR Legacy]
+["Whole wheat bread","whole wheat bread|wheat bread|wheat toast|whole wheat toast|whole grain bread|multigrain bread","1 slice",32,0,0,81,4,13.8,1.1,172688,{fiber:1.92,sugar:1.39,sodium:145.6,potassium:81.3,calcium:51.5,iron:0.79,magnesium:24,vita:0,vitc:0,vitd:0,b12:0}], // fdc 172688 Bread, whole-wheat, commercially prepared [SR Legacy]
+["Sourdough bread","sourdough|sourdough bread|sourdough toast","1 slice",36,0,0,98,4,19,0.6,172675,{fiber:0.79,sugar:1.66,sodium:216.7,potassium:42.1,calcium:18.7,iron:1.41,magnesium:11.5,vita:0,vitc:0,vitd:0,b12:0}], // fdc 172675 Bread, french or vienna (includes sourdough) [SR Legacy]
+["Bagel","bagel|plain bagel","1 bagel",105,0,0,277,11,55,1.4,174899,{fiber:1.68,sugar:8.85,sodium:443.1,potassium:112.3,calcium:229.9,iron:3.75,magnesium:30.4,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174899 Bagels, plain, enriched, with calcium propionate (includes onion, poppy, sesame) [SR Legacy]
+["English muffin","english muffin","1 muffin",57,0,0,134,4.4,26,1,175063,{fiber:1.54,sugar:null,sodium:264.5,potassium:74.7,calcium:29.6,iron:1.43,magnesium:12,vita:0,vitc:0,vitd:null,b12:0.02}], // fdc 175063 English muffins, plain, enriched, without calcium propionate(includes sourdough) [SR Legacy]
+["Flour tortilla","tortilla|flour tortilla|wrap","1 tortilla (8 in)",49,0,0,146,3.9,24,3.7,167535,{fiber:1.18,sugar:1.3,sodium:363.6,potassium:65.2,calcium:79.9,iron:1.63,magnesium:10.3,vita:0,vitc:0,vitd:0,b12:0}], // fdc 167535 Tortillas, ready-to-bake or -fry, flour, shelf stable [SR Legacy]
+["Corn tortilla","corn tortilla","1 tortilla (6 in)",26,0,0,57,1.5,12,0.7,175036,{fiber:1.64,sugar:0.23,sodium:11.7,potassium:48.4,calcium:21.1,iron:0.32,magnesium:18.7,vita:0,vitc:0,vitd:0,b12:0}], // fdc 175036 Tortillas, ready-to-bake or -fry, corn [SR Legacy]
+["Pita","pita|pita bread","1 pita (6.5 in)",60,0,0,165,5.5,33,0.7,174915,{fiber:1.32,sugar:0.78,sodium:321.6,potassium:72,calcium:51.6,iron:1.57,magnesium:15.6,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174915 Bread, pita, white, enriched [SR Legacy]
+["Croissant","croissant","1 medium",57,0,0,231,4.7,26,12,174987,{fiber:1.48,sugar:6.42,sodium:218.9,potassium:67.3,calcium:21.1,iron:1.16,magnesium:9.1,vita:117.42,vitc:0.11,vitd:0,b12:0.09}], // fdc 174987 Croissants, butter [SR Legacy]
+["Muffin","muffin|blueberry muffin","1 medium",113,0,0,420,6,57,19,172765,{fiber:1.24,sugar:35.56,sodium:379.7,potassium:136.7,calcium:49.7,iron:1.47,magnesium:11.3,vita:23.73,vitc:1.02,vitd:0.11,b12:0.18}], // fdc 172765 Muffins, blueberry, commercially prepared (Includes mini-muffins) [SR Legacy]
+["Hamburger bun","bun|hamburger bun|hot dog bun|roll|dinner roll","1 bun",44,0,0,120,4,21,1.9,172796,{fiber:0.79,sugar:3.2,sodium:217.4,potassium:53.7,calcium:63.4,iron:1.51,magnesium:10.1,vita:12.76,vitc:0.57,vitd:0,b12:0.09}], // fdc 172796 Rolls, hamburger or hotdog, plain [SR Legacy]
+["White rice (cooked)","rice|white rice|steamed rice|jasmine rice|basmati rice|cooked rice","1 cup cooked",158,158,0,205,4.3,45,0.4,168878,{fiber:0.63,sugar:0.08,sodium:1.6,potassium:55.3,calcium:15.8,iron:1.9,magnesium:19,vita:0,vitc:0,vitd:0,b12:0}], // fdc 168878 Rice, white, long-grain, regular, enriched, cooked [SR Legacy]
+["Brown rice (cooked)","brown rice","1 cup cooked",195,195,0,216,5,45,1.8,169704,{fiber:3.12,sugar:0.47,sodium:7.8,potassium:167.7,calcium:5.8,iron:1.09,magnesium:76,vita:0,vitc:0,vitd:0,b12:0}], // fdc 169704 Rice, brown, long-grain, cooked (Includes foods for USDA's Food Distribution Program) [SR Legacy]
+["Uncooked white rice","uncooked rice|dry rice|raw rice|uncooked white rice","1 cup dry",185,185,0,675,13.2,148,1.2,168877,{fiber:2.4,sugar:0.22,sodium:9.2,potassium:212.8,calcium:51.8,iron:7.97,magnesium:46.2,vita:0,vitc:0,vitd:0,b12:0}], // fdc 168877 Rice, white, long-grain, regular, raw, enriched [SR Legacy]
+["Pasta (cooked)","pasta|spaghetti|noodles|penne|macaroni|cooked pasta","1 cup cooked",140,140,0,220,8.1,43,1.3,169737,{fiber:2.52,sugar:0.78,sodium:1.4,potassium:61.6,calcium:9.8,iron:1.79,magnesium:25.2,vita:0,vitc:0,vitd:0,b12:0}], // fdc 169737 Pasta, cooked, enriched, without added salt [SR Legacy]
+["Dry pasta","dry pasta|uncooked pasta","2 oz dry",56,0,0,200,7,42,1,169736,{fiber:1.79,sugar:1.5,sodium:3.4,potassium:124.9,calcium:11.8,iron:1.85,magnesium:29.7,vita:0,vitc:0,vitd:0,b12:0}], // fdc 169736 Pasta, dry, enriched [SR Legacy]
+["Quinoa (cooked)","quinoa","1 cup cooked",185,185,0,222,8.1,39,3.6,168917,{fiber:5.18,sugar:1.61,sodium:12.9,potassium:318.2,calcium:31.4,iron:2.76,magnesium:118.4,vita:0,vitc:0,vitd:0,b12:0}], // fdc 168917 Quinoa, cooked [SR Legacy]
+["Couscous (cooked)","couscous","1 cup cooked",157,157,0,176,6,36,0.3,169700,{fiber:2.2,sugar:0.16,sodium:7.8,potassium:91.1,calcium:12.6,iron:0.6,magnesium:12.6,vita:0,vitc:0,vitd:0,b12:0}], // fdc 169700 Couscous, cooked [SR Legacy]
+["All-purpose flour","flour|all purpose flour|white flour","1 cup",125,125,0,455,12.9,95.4,1.2,168894,{fiber:3.38,sugar:0.34,sodium:2.5,potassium:133.8,calcium:18.8,iron:5.8,magnesium:27.5,vita:0,vitc:0,vitd:0,b12:0}], // fdc 168894 Wheat flour, white, all-purpose, enriched, bleached [SR Legacy]
+["Crackers","cracker|crackers|ritz","5 crackers",16,0,3.2,80,1,10,4.5,174982,{fiber:0.37,sugar:1.31,sodium:116.2,potassium:18.9,calcium:19.2,iron:0.64,magnesium:2.9,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174982 Crackers, standard snack-type, regular [SR Legacy]
+["Saltine crackers","saltine|saltines","5 crackers",15,0,3,63,1.4,11,1.3,172746,{fiber:0.42,sugar:0.19,sodium:141.2,potassium:22.8,calcium:2.9,iron:0.84,magnesium:3.5,vita:0.15,vitc:0,vitd:0,b12:0.01}], // fdc 172746 Crackers, saltines (includes oyster, soda, soup) [SR Legacy]
+["Popcorn (air-popped)","popcorn","1 cup popped",8,8,0,31,1,6.2,0.4,167959,{fiber:1.16,sugar:0.07,sodium:0.6,potassium:26.3,calcium:0.6,iron:0.26,magnesium:11.5,vita:0.8,vitc:0,vitd:0,b12:0}], // fdc 167959 Snacks, popcorn, air-popped [SR Legacy]
+["Chicken breast (cooked)","chicken breast|chicken|grilled chicken|chicken breasts|baked chicken|rotisserie chicken","3 oz cooked",85,140,172,140,26.4,0,3.1,171477,{fiber:0,sugar:0,sodium:62.9,potassium:217.6,calcium:12.8,iron:0.88,magnesium:24.6,vita:5.1,vitc:0,vitd:0.09,b12:0.29}], // fdc 171477 Chicken, broilers or fryers, breast, meat only, cooked, roasted [SR Legacy]
+["Chicken thigh (cooked)","chicken thigh|chicken thighs","3 oz cooked",85,140,52,178,22,0,9.3,173625,{fiber:0,sugar:0,sodium:86.7,potassium:215.1,calcium:7.7,iron:0.92,magnesium:18.7,vita:13.6,vitc:0,vitd:0.17,b12:0.37}], // fdc 173625 Chicken, broilers or fryers, thigh, meat and skin, cooked, roasted [SR Legacy]
+["Chicken wing","chicken wing|wing|wings|buffalo wing|hot wing","1 wing",34,0,0,99,9.1,0,6.6,173628,{fiber:0.1,sugar:null,sodium:108.8,potassium:46.9,calcium:6.8,iron:0.44,magnesium:5.4,vita:11.56,vitc:0,vitd:null,b12:0.09}], // fdc 173628 Chicken, broilers or fryers, wing, meat and skin, cooked, fried, batter [SR Legacy]
+["Chicken nuggets","chicken nugget|nugget|nuggets|chicken nuggets","1 nugget",16,0,0,47,2.3,2.8,2.9,172111,{fiber:0.26,sugar:0.12,sodium:86.4,potassium:33,calcium:7.5,iron:0.15,magnesium:4,vita:2.56,vitc:0.06,vitd:0.05,b12:0.04}], // fdc 172111 Chicken, nuggets, dark and white meat, precooked, frozen, not reheated [SR Legacy]
+["Chicken tenders (breaded)","chicken tender|chicken tenders|chicken strip|chicken strips|chicken finger","1 tender",45,0,0,120,8,7,7,173321,{fiber:0.54,sugar:0.18,sodium:346.1,potassium:167.8,calcium:7.7,iron:0.33,magnesium:12.6,vita:1.35,vitc:0.5,vitd:0.09,b12:0.07}], // fdc 173321 Fast foods, chicken tenders [SR Legacy]
+["Fried chicken","fried chicken","1 breast piece",160,0,0,390,35,12,22,171475,{fiber:0.48,sugar:0,sodium:440,potassium:321.6,calcium:32,iron:2,magnesium:38.4,vita:32,vitc:0,vitd:0.16,b12:0.48}], // fdc 171475 Chicken, broilers or fryers, breast, meat and skin, cooked, fried, batter [SR Legacy]
+["Ground beef 85/15 (cooked)","ground beef|hamburger meat|beef|minced beef","3 oz cooked",85,0,0,215,22,0,13,174032,{fiber:0,sugar:0,sodium:61.2,potassium:270.3,calcium:15.3,iron:2.21,magnesium:17.9,vita:2.55,vitc:0,vitd:0,b12:2.24}], // fdc 174032 Beef, ground, 85% lean meat / 15% fat, patty, cooked, broiled [SR Legacy]
+["Ground turkey (cooked)","ground turkey|turkey burger patty","3 oz cooked",85,0,0,170,23,0,8,174492,{fiber:0,sugar:0,sodium:77.3,potassium:209.9,calcium:24.6,iron:1.47,magnesium:21.2,vita:26.35,vitc:0,vitd:0.17,b12:1.53}], // fdc 174492 Turkey, ground, 93% lean, 7% fat, patties, broiled [SR Legacy]
+["Turkey breast (roasted)","turkey|turkey breast|roast turkey","3 oz",85,0,0,125,25.6,0,1.8,171496,{fiber:0,sugar:0,sodium:84.2,potassium:211.7,calcium:7.7,iron:0.6,magnesium:27.2,vita:2.55,vitc:0,vitd:0.26,b12:0.33}], // fdc 171496 Turkey, whole, breast, meat only, cooked, roasted [SR Legacy]
+["Sirloin steak (cooked)","steak|sirloin|sirloin steak|top sirloin|filet|filet mignon","3 oz cooked",85,0,0,180,26,0,8,168633,{fiber:0,sugar:0,sodium:53.5,potassium:323.9,calcium:20.4,iron:1.56,magnesium:22.1,vita:0,vitc:0,vitd:null,b12:1.31}], // fdc 168633 Beef, top sirloin, steak, separable lean and fat, trimmed to 0" fat, select, cooked, broiled [SR Legacy]
+["Ribeye steak (cooked)","ribeye|rib eye|ribeye steak","3 oz cooked",85,0,0,250,22,0,18,169557,{fiber:0,sugar:0,sodium:47.6,potassium:289,calcium:17,iron:1.49,magnesium:19.6,vita:0,vitc:0,vitd:null,b12:1.36}], // fdc 169557 Beef, rib eye, small end (ribs 10-12), separable lean and fat, trimmed to 0" fat, all grades, cooked, broiled [SR Legacy]
+["Pork chop (cooked)","pork chop|pork|pork loin|pork tenderloin","3 oz cooked",85,0,0,180,25,0,8,167827,{fiber:0,sugar:0,sodium:46.8,potassium:292.4,calcium:20.4,iron:0.67,magnesium:21.2,vita:1.7,vitc:0,vitd:0.68,b12:0.5}], // fdc 167827 Pork, fresh, loin, center loin (chops), bone-in, separable lean and fat, cooked, broiled [SR Legacy]
+["Pulled pork","pulled pork|bbq pork","1/2 cup",70,140,0,118,9.2,13.1,3.1,173344,{fiber:0.84,sugar:10.64,sodium:466.2,potassium:213.5,calcium:30.8,iron:0.87,magnesium:15.4,vita:9.1,vitc:0.14,vitd:0.14,b12:0.29}], // fdc 173344 Pulled pork in barbecue sauce [SR Legacy]
+["Ham (deli)","ham|deli ham|sliced ham","2 oz",56,0,28,61,9.4,1.5,1.6,173863,{fiber:0,sugar:0,sodium:529.2,potassium:259.3,calcium:2.8,iron:0.33,magnesium:10.6,vita:0,vitc:0,vitd:0.34,b12:0.2}], // fdc 173863 Ham, sliced, pre-packaged, deli meat (96%fat free, water added) [SR Legacy]
+["Turkey (deli)","deli turkey|turkey slices|sliced turkey|lunch meat|lunchmeat","2 oz",56,0,28,60,10,2,1,172941,{fiber:0,sugar:0.51,sodium:502.9,potassium:207.8,calcium:7.8,iron:0.24,magnesium:10.6,vita:0,vitc:0,vitd:0.11,b12:0.21}], // fdc 172941 Turkey breast, sliced, prepackaged [SR Legacy]
+["Hot dog in bun","hot dog|hotdog|hot dogs","1 hot dog with bun",89,0,0,270,9,24,15,2707060,{fiber:0.71,sugar:3.49,sodium:606.1,potassium:210,calcium:64.1,iron:1.91,magnesium:15.1,vita:0.89,vitc:0.53,vitd:0.45,b12:0.49}], // fdc 2707060 Hot dog sandwich, beef, on white bun [FNDDS]
+["Hot dog frank (no bun)","frank|frankfurter|wiener","1 frank",45,0,0,151,5.2,1.6,13.5,173862,{fiber:0,sugar:0.53,sodium:389.2,potassium:163.8,calcium:6.3,iron:0.5,magnesium:5,vita:1.35,vitc:0,vitd:0.41,b12:0.43}], // fdc 173862 Frankfurter, beef, unheated [SR Legacy]
+["Pepperoni","pepperoni","1 oz",28,0,2,138,6,0.3,12.4,174575,{fiber:0,sugar:0,sodium:443,potassium:76.7,calcium:5.3,iron:0.37,magnesium:5,vita:0,vitc:0,vitd:0.36,b12:0.36}], // fdc 174575 Pepperoni, beef and pork, sliced [SR Legacy]
+["Beef jerky","jerky|beef jerky","1 oz",28,0,0,116,9.4,3.1,7.3,167536,{fiber:0.5,sugar:2.52,sodium:499.8,potassium:167.2,calcium:5.6,iron:1.52,magnesium:14.3,vita:0,vitc:0,vitd:0.08,b12:0.28}], // fdc 167536 Snacks, beef jerky, chopped and formed [SR Legacy]
+["Salmon (cooked)","salmon|grilled salmon|baked salmon|salmon fillet","3 oz cooked",85,0,170,175,19,0,10.5,175168,{fiber:0,sugar:0,sodium:51.9,potassium:326.4,calcium:12.8,iron:0.29,magnesium:25.5,vita:58.65,vitc:3.15,vitd:11.13,b12:2.38}], // fdc 175168 Fish, salmon, Atlantic, farmed, cooked, dry heat [SR Legacy]
+["Tuna (canned in water)","tuna|canned tuna|tuna fish|can of tuna","3 oz drained",85,0,142,99,22,0,0.7,171986,{fiber:0,sugar:0,sodium:42.5,potassium:201.4,calcium:9.3,iron:1.3,magnesium:22.9,vita:null,vitc:0,vitd:null,b12:2.54}], // fdc 171986 Fish, tuna, light, canned in water, without salt, drained solids [SR Legacy]
+["Shrimp (cooked)","shrimp|prawns|prawn","3 oz cooked",85,0,6,84,20,0.2,0.2,171971,{fiber:0,sugar:0,sodium:805,potassium:144.5,calcium:77.3,iron:0.27,magnesium:31.4,vita:76.5,vitc:0,vitd:0.09,b12:1.41}], // fdc 171971 Crustaceans, shrimp, mixed species, cooked, moist heat (may contain additives to retain moisture) [SR Legacy]
+["Tilapia (cooked)","tilapia|white fish|fish","3 oz cooked",85,0,0,109,22,0,2.3,175177,{fiber:0,sugar:0,sodium:47.6,potassium:323,calcium:11.9,iron:0.59,magnesium:28.9,vita:0,vitc:0,vitd:3.15,b12:1.58}], // fdc 175177 Fish, tilapia, cooked, dry heat [SR Legacy]
+["Cod (cooked)","cod","3 oz cooked",85,0,0,89,19,0,0.7,171956,{fiber:0,sugar:0,sodium:66.3,potassium:207.4,calcium:11.9,iron:0.42,magnesium:35.7,vita:11.9,vitc:0.85,vitd:1.02,b12:0.89}], // fdc 171956 Fish, cod, Atlantic, cooked, dry heat [SR Legacy]
+["Tofu (firm)","tofu|firm tofu","1/2 cup",126,252,0,181,21.8,3.5,11,172475,{fiber:2.9,sugar:null,sodium:17.6,potassium:298.6,calcium:860.6,iron:3.35,magnesium:73.1,vita:null,vitc:0.25,vitd:0,b12:0}], // fdc 172475 Tofu, raw, firm, prepared with calcium sulfate [SR Legacy]
+["Black beans (cooked)","black beans|beans|black bean","1 cup",172,172,0,227,15.2,40.8,0.9,173735,{fiber:14.96,sugar:0.55,sodium:1.7,potassium:610.6,calcium:46.4,iron:3.61,magnesium:120.4,vita:0,vitc:0,vitd:0,b12:0}], // fdc 173735 Beans, black, mature seeds, cooked, boiled, without salt [SR Legacy]
+["Pinto beans (cooked)","pinto beans|pinto bean","1 cup",171,171,0,245,15.4,44.8,1.1,175200,{fiber:15.39,sugar:0.58,sodium:1.7,potassium:745.6,calcium:78.7,iron:3.57,magnesium:85.5,vita:0,vitc:1.37,vitd:0,b12:0}], // fdc 175200 Beans, pinto, mature seeds, cooked, boiled, without salt [SR Legacy]
+["Kidney beans (cooked)","kidney beans|kidney bean|red beans","1 cup",177,177,0,225,15.3,40.4,0.9,175194,{fiber:13.1,sugar:0.57,sodium:3.5,potassium:713.3,calcium:49.6,iron:5.2,magnesium:79.7,vita:0,vitc:2.12,vitd:0,b12:0}], // fdc 175194 Beans, kidney, red, mature seeds, cooked, boiled, without salt [SR Legacy]
+["Chickpeas (cooked)","chickpeas|chickpea|garbanzo beans","1 cup",164,164,0,269,14.5,45,4.2,173757,{fiber:12.46,sugar:7.87,sodium:11.5,potassium:477.2,calcium:80.4,iron:4.74,magnesium:78.7,vita:1.64,vitc:2.13,vitd:0,b12:0}], // fdc 173757 Chickpeas (garbanzo beans, bengal gram), mature seeds, cooked, boiled, without salt [SR Legacy]
+["Lentils (cooked)","lentils|lentil","1 cup",198,198,0,230,17.9,39.9,0.8,172421,{fiber:15.64,sugar:3.56,sodium:4,potassium:730.6,calcium:37.6,iron:6.59,magnesium:71.3,vita:0,vitc:2.97,vitd:0,b12:0}], // fdc 172421 Lentils, mature seeds, cooked, boiled, without salt [SR Legacy]
+["Refried beans","refried beans","1/2 cup",121,242,0,110,6,18,1.5,172438,{fiber:4.48,sugar:0.65,sodium:447.7,potassium:386,calcium:35.1,iron:1.74,magnesium:42.4,vita:0,vitc:7.26,vitd:0,b12:0}], // fdc 172438 Refried beans, canned, traditional style [SR Legacy]
+["Edamame","edamame","1 cup",155,155,0,188,18.4,13.8,8.1,168411,{fiber:8.06,sugar:3.38,sodium:9.3,potassium:675.8,calcium:97.7,iron:3.52,magnesium:99.2,vita:23.25,vitc:9.46,vitd:0,b12:0}], // fdc 168411 Edamame, frozen, prepared [SR Legacy]
+["Hummus","hummus","2 tbsp",30,246,0,70,2,4,5,174289,{fiber:1.65,sugar:0.19,sodium:127.8,potassium:93.6,calcium:14.1,iron:0.76,magnesium:22.5,vita:0.3,vitc:0,vitd:0,b12:0}], // fdc 174289 Hummus, commercial [SR Legacy]
+["Protein shake (whey, water)","protein shake|protein powder|whey|whey protein|scoop of protein|shake|protein","1 scoop",31,0,0,120,24,3,1.5,173180,{fiber:0.96,sugar:0,sodium:48.4,potassium:155,calcium:145.4,iron:0.35,magnesium:60.5,vita:0,vitc:0,vitd:0,b12:0.76}], // fdc 173180 Beverages, Protein powder whey based [SR Legacy]
+["Premade protein shake","premier protein|fairlife shake|core power|ready to drink protein shake","1 bottle (11 oz)",325,0,0,160,30,5,3,173170,{fiber:1.3,sugar:1.95,sodium:234,potassium:581.8,calcium:422.5,iron:3.12,magnesium:143,vita:555.75,vitc:63.05,vitd:3.58,b12:1.95}], // fdc 173170 Beverages, SLIMFAST, Meal replacement,  High Protein Shake, Ready-To-Drink, 3-2-1 plan [SR Legacy] — Premier Protein and Fairlife are not in these datasets; this is a ready-to-drink high-protein shake
+["Milk (2%)","milk|2% milk|two percent milk|reduced fat milk","1 cup",244,244,0,122,8.1,11.7,4.8,171267,{fiber:0,sugar:12.35,sodium:114.7,potassium:341.6,calcium:292.8,iron:0.05,magnesium:26.8,vita:134.2,vitc:0.49,vitd:2.93,b12:1.29}], // fdc 171267 Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D [SR Legacy]
+["Whole milk","whole milk","1 cup",244,244,0,149,7.7,11.7,7.9,171265,{fiber:0,sugar:12.32,sodium:104.9,potassium:322.1,calcium:275.7,iron:0.07,magnesium:24.4,vita:112.24,vitc:0,vitd:3.17,b12:1.1}], // fdc 171265 Milk, whole, 3.25% milkfat, with added vitamin D [SR Legacy]
+["Skim milk","skim milk|nonfat milk|fat free milk","1 cup",245,245,0,83,8.3,12.2,0.2,171269,{fiber:0,sugar:12.47,sodium:102.9,potassium:382.2,calcium:298.9,iron:0.07,magnesium:26.9,vita:149.45,vitc:0,vitd:2.94,b12:1.23}], // fdc 171269 Milk, nonfat, fluid, with added vitamin A and vitamin D (fat free or skim) [SR Legacy]
+["Chocolate milk","chocolate milk","1 cup",250,250,0,190,7.5,30,4.8,170880,{fiber:1.75,sugar:23.88,sodium:165,potassium:422.5,calcium:272.5,iron:0.6,magnesium:35,vita:160,vitc:0,vitd:3,b12:0.82}], // fdc 170880 Milk, chocolate, fluid, commercial, reduced fat, with added vitamin A and vitamin D [SR Legacy]
+["Almond milk (unsweetened)","almond milk","1 cup",240,240,0,30,1,1,2.5,174832,{fiber:0.48,sugar:1.94,sodium:172.8,potassium:160.8,calcium:441.6,iron:0.67,magnesium:14.4,vita:0,vitc:0,vitd:2.4,b12:0}], // fdc 174832 Beverages, almond milk, unsweetened, shelf stable [SR Legacy]
+["Oat milk","oat milk|oatly","1 cup",240,240,0,120,3,16,5,2705412,{fiber:1.2,sugar:4.9,sodium:103.2,potassium:43.2,calcium:372,iron:0.5,magnesium:19.2,vita:0,vitc:0,vitd:4.08,b12:1.2}], // fdc 2705412 Oat milk [FNDDS]
+["Greek yogurt (nonfat, plain)","greek yogurt|yogurt|plain greek yogurt|nonfat greek yogurt|chobani|fage","1 container (170 g)",170,245,0,100,17.3,6.1,0.7,170894,{fiber:0,sugar:5.51,sodium:61.2,potassium:239.7,calcium:187,iron:0.12,magnesium:18.7,vita:1.7,vitc:0,vitd:0,b12:1.27}], // fdc 170894 Yogurt, Greek, plain, nonfat (Includes foods for USDA's Food Distribution Program) [SR Legacy]
+["Flavored yogurt","flavored yogurt|fruit yogurt|strawberry yogurt|vanilla yogurt","1 container (170 g)",170,245,0,150,6,25,2.5,171285,{fiber:0,sugar:32.38,sodium:98.6,potassium:331.5,calcium:258.4,iron:0.12,magnesium:25.5,vita:17,vitc:1.19,vitd:0,b12:0.8}], // fdc 171285 Yogurt, fruit, low fat, 10 grams protein per 8 ounce [SR Legacy]
+["Cottage cheese (2%)","cottage cheese","1/2 cup",113,226,0,92,12,4.8,2.6,172182,{fiber:0,sugar:4.52,sodium:348,potassium:141.2,calcium:125.4,iron:0.15,magnesium:10.2,vita:76.84,vitc:0,vitd:0,b12:0.53}], // fdc 172182 Cheese, cottage, lowfat, 2% milkfat [SR Legacy]
+["Cheddar cheese","cheese|cheddar|cheddar cheese|shredded cheese","1 oz",28,113,28,113,7,0.4,9.3,173414,{fiber:0,sugar:0.13,sodium:182.8,potassium:21.3,calcium:198.8,iron:0.04,magnesium:7.6,vita:94.36,vitc:0,vitd:0.17,b12:0.31}], // fdc 173414 Cheese, cheddar (Includes foods for USDA's Food Distribution Program) [SR Legacy]
+["American cheese","american cheese|cheese slice|slice of cheese|kraft single","1 slice",21,0,0,65,3.5,1.5,5,170853,{fiber:0,sugar:0.47,sodium:350.9,potassium:27.7,calcium:219.4,iron:0.13,magnesium:5.5,vita:66.57,vitc:0,vitd:1.57,b12:0.32}], // fdc 170853 Cheese, pasteurized process, American, fortified with vitamin D [SR Legacy]
+["Mozzarella","mozzarella|mozzarella cheese","1 oz",28,113,28,85,6.3,0.6,6.3,171244,{fiber:0,sugar:0.53,sodium:186.5,potassium:52.6,calcium:195.2,iron:0.06,magnesium:7.6,vita:63.56,vitc:0,vitd:0.11,b12:0.47}], // fdc 171244 Cheese, mozzarella, low moisture, part-skim [SR Legacy]
+["String cheese","string cheese|cheese stick","1 stick",28,0,0,80,7,1,6,171244,{fiber:0,sugar:0.53,sodium:186.5,potassium:52.6,calcium:195.2,iron:0.06,magnesium:7.6,vita:63.56,vitc:0,vitd:0.11,b12:0.47}], // fdc 171244 Cheese, mozzarella, low moisture, part-skim [SR Legacy] — no separate string-cheese entry; low-moisture part-skim mozzarella is the cheese in a stick
+["Parmesan (grated)","parmesan|parmesan cheese|parm","1 tbsp",5,80,0,21,1.9,0.2,1.4,171247,{fiber:0,sugar:0,sodium:90.2,potassium:9,calcium:42.6,iron:0.02,magnesium:1.7,vita:13.1,vitc:0,vitd:0.03,b12:0.07}], // fdc 171247 Cheese, parmesan, grated [SR Legacy]
+["Feta","feta|feta cheese","1 oz",28,150,0,75,4,1.2,6,173420,{fiber:0,sugar:0,sodium:318.9,potassium:17.4,calcium:138,iron:0.18,magnesium:5.3,vita:35,vitc:0,vitd:0.11,b12:0.47}], // fdc 173420 Cheese, feta [SR Legacy]
+["Cream cheese","cream cheese","1 tbsp",14.5,232,0,51,0.9,0.8,5,173418,{fiber:0,sugar:0.55,sodium:45.5,potassium:19.1,calcium:14.1,iron:0.02,magnesium:1.3,vita:44.66,vitc:0,vitd:0,b12:0.03}], // fdc 173418 Cheese, cream [SR Legacy]
+["Butter","butter|pat of butter","1 tbsp",14.2,227,5,102,0.1,0,11.5,173430,{fiber:0,sugar:0.01,sodium:1.6,potassium:3.4,calcium:3.4,iron:0,magnesium:0.3,vita:97.13,vitc:0,vitd:0,b12:0.02}], // fdc 173430 Butter, without salt [SR Legacy]
+["Sour cream","sour cream","2 tbsp",24,230,0,47,0.6,1.1,4.6,171257,{fiber:0,sugar:0.82,sodium:7.4,potassium:30,calcium:24.2,iron:0.02,magnesium:2.4,vita:29.76,vitc:0.22,vitd:0,b12:0.05}], // fdc 171257 Cream, sour, cultured [SR Legacy]
+["Heavy cream","heavy cream|whipping cream|cream","1 tbsp",15,238,0,51,0.4,0.4,5.4,170859,{fiber:0,sugar:0.44,sodium:4,potassium:14.2,calcium:9.9,iron:0.01,magnesium:1.1,vita:61.65,vitc:0.09,vitd:0.24,b12:0.02}], // fdc 170859 Cream, fluid, heavy whipping [SR Legacy]
+["Half and half","half and half|half & half","1 tbsp",15,242,0,20,0.5,0.6,1.7,171255,{fiber:0,sugar:0.62,sodium:9.2,potassium:19.8,calcium:16.1,iron:0.01,magnesium:1.5,vita:14.55,vitc:0.14,vitd:0,b12:0.03}], // fdc 171255 Cream, fluid, half and half [SR Legacy]
+["Ice cream","ice cream|scoop of ice cream","1/2 cup",66,132,66,137,2.3,15.6,7.3,167575,{fiber:0.46,sugar:14.01,sodium:52.8,potassium:131.3,calcium:84.5,iron:0.06,magnesium:9.2,vita:77.88,vitc:0.4,vitd:0.13,b12:0.26}], // fdc 167575 Ice creams, vanilla [SR Legacy]
+["Banana","banana|bananas","1 medium",118,150,0,105,1.3,27,0.4,173944,{fiber:3.07,sugar:14.43,sodium:1.2,potassium:422.4,calcium:5.9,iron:0.31,magnesium:31.9,vita:3.54,vitc:10.27,vitd:0,b12:0}], // fdc 173944 Bananas, raw [SR Legacy]
+["Apple","apple|apples","1 medium",182,125,0,95,0.5,25,0.3,171688,{fiber:4.37,sugar:18.91,sodium:1.8,potassium:194.7,calcium:10.9,iron:0.22,magnesium:9.1,vita:5.46,vitc:8.37,vitd:0,b12:0}], // fdc 171688 Apples, raw, with skin (Includes foods for USDA's Food Distribution Program) [SR Legacy]
+["Orange","orange|oranges","1 medium",131,180,0,62,1.2,15.4,0.2,169097,{fiber:3.14,sugar:12.25,sodium:0,potassium:237.1,calcium:52.4,iron:0.13,magnesium:13.1,vita:14.41,vitc:69.69,vitd:0,b12:0}], // fdc 169097 Oranges, raw, all commercial varieties [SR Legacy]
+["Clementine","clementine|cutie|mandarin|tangerine","1 fruit",74,0,0,35,0.6,8.9,0.1,168195,{fiber:1.26,sugar:6.79,sodium:0.7,potassium:131,calcium:22.2,iron:0.1,magnesium:7.4,vita:null,vitc:36.11,vitd:0,b12:null}], // fdc 168195 Clementines, raw [SR Legacy]
+["Strawberries","strawberry|strawberries","1 cup",152,152,12,49,1,11.7,0.5,167762,{fiber:3.04,sugar:7.43,sodium:1.5,potassium:232.6,calcium:24.3,iron:0.62,magnesium:19.8,vita:1.52,vitc:89.38,vitd:0,b12:0}], // fdc 167762 Strawberries, raw [SR Legacy]
+["Blueberries","blueberry|blueberries","1 cup",148,148,0,84,1.1,21.4,0.5,171711,{fiber:3.55,sugar:14.74,sodium:1.5,potassium:114,calcium:8.9,iron:0.41,magnesium:8.9,vita:4.44,vitc:14.36,vitd:0,b12:0}], // fdc 171711 Blueberries, raw [SR Legacy]
+["Raspberries","raspberry|raspberries","1 cup",123,123,0,64,1.5,14.7,0.8,167755,{fiber:8,sugar:5.44,sodium:1.2,potassium:185.7,calcium:30.8,iron:0.85,magnesium:27.1,vita:2.46,vitc:32.23,vitd:0,b12:0}], // fdc 167755 Raspberries, raw [SR Legacy]
+["Grapes","grape|grapes","1 cup",151,151,5,104,1.1,27.3,0.2,174683,{fiber:1.36,sugar:23.37,sodium:3,potassium:288.4,calcium:15.1,iron:0.54,magnesium:10.6,vita:4.53,vitc:4.83,vitd:0,b12:0}], // fdc 174683 Grapes, red or green (European type, such as Thompson seedless), raw [SR Legacy]
+["Avocado","avocado|avocados","1 medium",150,150,0,240,3,12.8,22,171705,{fiber:10.05,sugar:0.99,sodium:10.5,potassium:727.5,calcium:18,iron:0.82,magnesium:43.5,vita:10.5,vitc:15,vitd:0,b12:0}], // fdc 171705 Avocados, raw, all commercial varieties [SR Legacy]
+["Watermelon","watermelon","1 cup diced",152,152,286,46,0.9,11.5,0.2,167765,{fiber:0.61,sugar:9.42,sodium:1.5,potassium:170.2,calcium:10.6,iron:0.36,magnesium:15.2,vita:42.56,vitc:12.31,vitd:0,b12:0}], // fdc 167765 Watermelon, raw [SR Legacy]
+["Cantaloupe","cantaloupe|melon","1 cup diced",160,160,0,54,1.3,13,0.3,169092,{fiber:1.44,sugar:12.58,sodium:25.6,potassium:427.2,calcium:14.4,iron:0.34,magnesium:19.2,vita:270.4,vitc:58.72,vitd:0,b12:0}], // fdc 169092 Melons, cantaloupe, raw [SR Legacy]
+["Pineapple","pineapple","1 cup chunks",165,165,0,82,0.9,21.6,0.2,169124,{fiber:2.31,sugar:16.25,sodium:1.6,potassium:179.8,calcium:21.4,iron:0.48,magnesium:19.8,vita:4.95,vitc:78.87,vitd:0,b12:0}], // fdc 169124 Pineapple, raw, all varieties [SR Legacy]
+["Mango","mango","1 cup sliced",165,165,336,99,1.4,24.7,0.6,169910,{fiber:2.64,sugar:22.54,sodium:1.6,potassium:277.2,calcium:18.1,iron:0.26,magnesium:16.5,vita:89.1,vitc:60.06,vitd:0,b12:0}], // fdc 169910 Mangos, raw [SR Legacy]
+["Peach","peach|peaches","1 medium",150,154,0,59,1.4,14.3,0.4,169928,{fiber:2.25,sugar:12.59,sodium:0,potassium:285,calcium:9,iron:0.38,magnesium:13.5,vita:24,vitc:9.9,vitd:0,b12:0}], // fdc 169928 Peaches, yellow, raw [SR Legacy]
+["Pear","pear|pears","1 medium",178,140,0,101,0.6,27,0.2,167776,{fiber:5.52,sugar:17.25,sodium:1.8,potassium:179.8,calcium:16,iron:0.34,magnesium:10.7,vita:1.78,vitc:7.83,vitd:null,b12:null}], // fdc 167776 Pears, raw, bartlett (Includes foods for USDA's Food Distribution Program) [SR Legacy]
+["Cherries","cherry|cherries","1 cup",138,138,8,87,1.5,22,0.3,171719,{fiber:2.9,sugar:17.69,sodium:0,potassium:306.4,calcium:17.9,iron:0.5,magnesium:15.2,vita:4.14,vitc:9.66,vitd:0,b12:0}], // fdc 171719 Cherries, sweet, raw [SR Legacy]
+["Kiwi","kiwi|kiwifruit","1 fruit",69,180,0,42,0.8,10,0.4,168153,{fiber:2.07,sugar:6.2,sodium:2.1,potassium:215.3,calcium:23.5,iron:0.21,magnesium:11.7,vita:2.76,vitc:63.96,vitd:0,b12:0}], // fdc 168153 Kiwifruit, green, raw [SR Legacy]
+["Raisins","raisin|raisins","1/4 cup",40,160,0,120,1.2,31.7,0.2,168165,{fiber:1.8,sugar:26.07,sodium:10.4,potassium:297.6,calcium:24.8,iron:0.72,magnesium:14.4,vita:0,vitc:0.92,vitd:0,b12:0}], // fdc 168165 Raisins, dark, seedless (Includes foods for USDA's Food Distribution Program) [SR Legacy]
+["Medjool date","date|dates|medjool date","1 date",24,0,0,66,0.4,18,0,168191,{fiber:1.61,sugar:15.95,sodium:0.2,potassium:167,calcium:15.4,iron:0.22,magnesium:13,vita:1.68,vitc:0,vitd:0,b12:null}], // fdc 168191 Dates, medjool [SR Legacy]
+["Fruit cup / mixed fruit","fruit|mixed fruit|fruit salad|fruit cup","1 cup",150,150,0,75,1,19,0.3,173027,{fiber:1.5,sugar:20.89,sodium:9,potassium:133.5,calcium:9,iron:0.43,magnesium:7.5,vita:15,vitc:2.85,vitd:0,b12:0}], // fdc 173027 Fruit cocktail, (peach and pineapple and pear and grape and cherry), canned, light syrup, solids and liquids [SR Legacy]
+["Side salad (no dressing)","salad|side salad|green salad|garden salad|mixed greens|greens","1 side salad",100,50,0,20,1.3,3.5,0.2,172074,{fiber:1.6,sugar:2.24,sodium:12,potassium:220,calcium:24,iron:0.65,magnesium:null,vita:null,vitc:15.7,vitd:null,b12:0}], // fdc 172074 McDONALD'S, Side Salad [SR Legacy]
+["Caesar salad (side, dressed)","caesar salad|caesar","1 side salad",100,0,0,190,4,8,16,null,{fiber:null,sugar:null,sodium:null,potassium:null,calcium:null,iron:null,magnesium:null,vita:null,vitc:null,vitd:null,b12:null}], // fdc none — no dressed Caesar salad in SR Legacy, Foundation, or FNDDS
+["Grilled chicken salad","chicken salad bowl|grilled chicken salad|chicken caesar salad","1 entree salad",350,0,0,400,35,14,22,173312,{fiber:3.5,sugar:6.05,sodium:805,potassium:null,calcium:168,iron:2.27,magnesium:null,vita:null,vitc:35.7,vitd:null,b12:null}], // fdc 173312 McDONALD'S, Bacon Ranch Salad with Grilled Chicken [SR Legacy] — McDonald's bacon ranch salad with grilled chicken; several nutrients were not published
+["Lettuce","lettuce|romaine|iceberg","1 cup shredded",47,47,0,7,0.6,1.4,0.1,169248,{fiber:0.56,sugar:0.93,sodium:4.7,potassium:66.3,calcium:8.5,iron:0.19,magnesium:3.3,vita:11.75,vitc:1.32,vitd:0,b12:0}], // fdc 169248 Lettuce, iceberg (includes crisphead types), raw [SR Legacy]
+["Spinach (raw)","spinach","1 cup",30,30,0,7,0.9,1.1,0.1,168462,{fiber:0.66,sugar:0.13,sodium:23.7,potassium:167.4,calcium:29.7,iron:0.81,magnesium:23.7,vita:140.7,vitc:8.43,vitd:0,b12:0}], // fdc 168462 Spinach, raw [SR Legacy]
+["Kale (raw)","kale","1 cup chopped",21,21,0,7,0.6,0.9,0.3,168421,{fiber:0.86,sugar:0.21,sodium:11.1,potassium:73.1,calcium:53.3,iron:0.34,magnesium:6.9,vita:50.61,vitc:19.61,vitd:0,b12:0}], // fdc 168421 Kale, raw [SR Legacy]
+["Broccoli (cooked)","broccoli","1 cup",156,156,0,55,3.7,11.2,0.6,169967,{fiber:5.15,sugar:2.17,sodium:64,potassium:457.1,calcium:62.4,iron:1.05,magnesium:32.8,vita:120.12,vitc:101.24,vitd:0,b12:0}], // fdc 169967 Broccoli, cooked, boiled, drained, without salt [SR Legacy]
+["Cauliflower (cooked)","cauliflower","1 cup",124,124,0,28,2.3,5.1,0.6,170397,{fiber:2.85,sugar:2.58,sodium:18.6,potassium:176.1,calcium:19.8,iron:0.4,magnesium:11.2,vita:1.24,vitc:54.93,vitd:0,b12:0}], // fdc 170397 Cauliflower, cooked, boiled, drained, without salt [SR Legacy]
+["Brussels sprouts","brussels sprouts|brussel sprouts","1 cup",156,156,0,56,4,11,0.8,169971,{fiber:4.06,sugar:2.71,sodium:32.8,potassium:494.5,calcium:56.2,iron:1.87,magnesium:31.2,vita:60.84,vitc:96.72,vitd:0,b12:0}], // fdc 169971 Brussels sprouts, cooked, boiled, drained, without salt [SR Legacy]
+["Green beans","green beans|string beans","1 cup",125,125,0,44,2.4,9.9,0.4,169141,{fiber:4,sugar:4.54,sodium:1.2,potassium:182.5,calcium:55,iron:0.81,magnesium:22.5,vita:40,vitc:12.12,vitd:0,b12:0}], // fdc 169141 Beans, snap, green, cooked, boiled, drained, without salt [SR Legacy]
+["Peas","peas|green peas","1 cup",160,160,0,134,8.6,25,0.4,170420,{fiber:8.8,sugar:9.49,sodium:4.8,potassium:433.6,calcium:43.2,iron:2.46,magnesium:62.4,vita:64,vitc:22.72,vitd:0,b12:0}], // fdc 170420 Peas, green, cooked, boiled, drained, without salt [SR Legacy]
+["Corn","corn|sweet corn|corn on the cob|ear of corn","1 cup",145,145,90,139,4.9,30.4,2.2,169999,{fiber:3.48,sugar:6.58,sodium:1.4,potassium:316.1,calcium:4.3,iron:0.65,magnesium:37.7,vita:18.85,vitc:7.97,vitd:0,b12:0}], // fdc 169999 Corn, sweet, yellow, cooked, boiled, drained, without salt [SR Legacy]
+["Carrot","carrot|carrots|baby carrots","1 medium",61,128,0,25,0.6,5.8,0.1,170393,{fiber:1.71,sugar:2.89,sodium:42.1,potassium:195.2,calcium:20.1,iron:0.18,magnesium:7.3,vita:509.35,vitc:3.6,vitd:0,b12:0}], // fdc 170393 Carrots, raw [SR Legacy]
+["Tomato","tomato|tomatoes","1 medium",123,180,0,22,1.1,4.8,0.2,170457,{fiber:1.48,sugar:3.23,sodium:6.2,potassium:291.5,calcium:12.3,iron:0.33,magnesium:13.5,vita:51.66,vitc:16.85,vitd:0,b12:0}], // fdc 170457 Tomatoes, red, ripe, raw, year round average [SR Legacy]
+["Cucumber","cucumber","1/2 cup sliced",52,104,301,8,0.3,1.9,0.1,168409,{fiber:0.26,sugar:0.87,sodium:1,potassium:76.4,calcium:8.3,iron:0.15,magnesium:6.8,vita:2.6,vitc:1.46,vitd:0,b12:0}], // fdc 168409 Cucumber, with peel, raw [SR Legacy]
+["Bell pepper","bell pepper|pepper|red pepper|green pepper","1 medium",119,149,0,31,1,6,0.4,170108,{fiber:2.5,sugar:5,sodium:4.8,potassium:251.1,calcium:8.3,iron:0.51,magnesium:14.3,vita:186.83,vitc:151.96,vitd:0,b12:0}], // fdc 170108 Peppers, sweet, red, raw [SR Legacy]
+["Onion","onion|onions","1 medium",110,160,0,44,1.2,10.3,0.1,170000,{fiber:1.87,sugar:4.66,sodium:4.4,potassium:160.6,calcium:25.3,iron:0.23,magnesium:11,vita:0,vitc:8.14,vitd:0,b12:0}], // fdc 170000 Onions, raw [SR Legacy]
+["Garlic","garlic|garlic clove|clove of garlic|cloves of garlic","1 clove",3,136,0,4,0.2,1,0,169230,{fiber:0.06,sugar:0.03,sodium:0.5,potassium:12,calcium:5.4,iron:0.05,magnesium:0.8,vita:0,vitc:0.94,vitd:0,b12:0}], // fdc 169230 Garlic, raw [SR Legacy]
+["Mushrooms","mushroom|mushrooms","1 cup raw",70,70,0,15,2.2,2.3,0.2,169251,{fiber:0.7,sugar:1.39,sodium:3.5,potassium:222.6,calcium:2.1,iron:0.35,magnesium:6.3,vita:0,vitc:1.47,vitd:0.14,b12:0.03}], // fdc 169251 Mushrooms, white, raw [SR Legacy]
+["Zucchini","zucchini","1 cup cooked",180,180,196,27,2,4.8,0.7,169292,{fiber:1.8,sugar:3.08,sodium:5.4,potassium:475.2,calcium:32.4,iron:0.67,magnesium:34.2,vita:100.8,vitc:23.22,vitd:0,b12:0}], // fdc 169292 Squash, summer, zucchini, includes skin, cooked, boiled, drained, without salt [SR Legacy]
+["Asparagus","asparagus","1 cup",180,180,15,40,4.3,7.4,0.4,168390,{fiber:3.6,sugar:2.34,sodium:25.2,potassium:403.2,calcium:41.4,iron:1.64,magnesium:25.2,vita:90,vitc:13.86,vitd:0,b12:0}], // fdc 168390 Asparagus, cooked, boiled, drained [SR Legacy]
+["Celery","celery","1 stalk",40,101,0,6,0.3,1.2,0.1,169988,{fiber:0.64,sugar:0.54,sodium:32,potassium:104,calcium:16,iron:0.08,magnesium:4.4,vita:8.8,vitc:1.24,vitd:0,b12:0}], // fdc 169988 Celery, raw [SR Legacy]
+["Potato (baked)","potato|baked potato|potatoes","1 medium",173,122,0,161,4.3,36.6,0.2,170093,{fiber:3.81,sugar:2.04,sodium:17.3,potassium:925.5,calcium:25.9,iron:1.87,magnesium:48.4,vita:1.73,vitc:16.61,vitd:0,b12:0}], // fdc 170093 Potatoes, baked, flesh and skin, without salt [SR Legacy]
+["Sweet potato (baked)","sweet potato|yam","1 medium",114,200,0,103,2.3,23.6,0.2,168483,{fiber:3.76,sugar:7.39,sodium:41,potassium:541.5,calcium:43.3,iron:0.79,magnesium:30.8,vita:1095.54,vitc:22.34,vitd:0,b12:0}], // fdc 168483 Sweet potato, cooked, baked in skin, flesh, without salt [SR Legacy]
+["Mashed potatoes","mashed potatoes|mashed potato","1 cup",210,210,0,237,4,35,9,168555,{fiber:3.15,sugar:3,sodium:665.7,potassium:596.4,calcium:50.4,iron:0.55,magnesium:37.8,vita:79.8,vitc:12.6,vitd:0.42,b12:0.15}], // fdc 168555 Potatoes, mashed, home-prepared, whole milk and butter added [SR Legacy]
+["French fries","fries|french fries|chips side","1 medium order",117,0,0,365,4.4,48,17,170698,{fiber:4.45,sugar:0.35,sodium:245.7,potassium:677.4,calcium:21.1,iron:0.95,magnesium:41,vita:0,vitc:5.5,vitd:0,b12:0}], // fdc 170698 Fast foods, potato, french fried in vegetable oil [SR Legacy]
+["Pickle","pickle|pickles","1 spear",35,0,0,4,0.2,0.8,0.1,168558,{fiber:0.35,sugar:0.37,sodium:283.1,potassium:41,calcium:19.9,iron:0.09,magnesium:2.5,vita:2.1,vitc:0.81,vitd:0,b12:0}], // fdc 168558 Pickles, cucumber, dill or kosher dill [SR Legacy]
+["Salsa","salsa","2 tbsp",32,259,0,10,0.5,2,0,174524,{fiber:0.61,sugar:1.28,sodium:227.5,potassium:88,calcium:9.6,iron:0.13,magnesium:4.8,vita:7.36,vitc:0.61,vitd:0,b12:0}], // fdc 174524 Sauce, salsa, ready-to-serve [SR Legacy]
+["Guacamole","guacamole|guac","2 tbsp",30,240,0,47,0.6,2.6,4.4,2709307,{fiber:1.95,sugar:0.22,sodium:103.2,potassium:141.6,calcium:3.6,iron:0.16,magnesium:8.4,vita:2.1,vitc:3.06,vitd:0,b12:0}], // fdc 2709307 Guacamole, NFS [FNDDS]
+["Peanut butter","peanut butter|pb","2 tbsp",32,258,0,190,7,7,16,174266,{fiber:1.6,sugar:3.36,sodium:136.3,potassium:178.6,calcium:15.7,iron:0.56,magnesium:53.8,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174266 Peanut butter, smooth style, with salt (Includes foods for USDA's Food Distribution Program) [SR Legacy]
+["Almond butter","almond butter","2 tbsp",32,258,0,196,6.7,6,17.8,168603,{fiber:3.3,sugar:2.01,sodium:72.6,potassium:239.4,calcium:111,iron:1.12,magnesium:89.3,vita:0,vitc:0,vitd:0,b12:0}], // fdc 168603 Nuts, almond butter, plain, with salt added [SR Legacy]
+["Almonds","almond|almonds","1 oz (~23 nuts)",28,143,1.2,164,6,6.1,14.2,170567,{fiber:3.5,sugar:1.22,sodium:0.3,potassium:205.2,calcium:75.3,iron:1.04,magnesium:75.6,vita:0,vitc:0,vitd:0,b12:0}], // fdc 170567 Nuts, almonds [SR Legacy]
+["Peanuts","peanut|peanuts","1 oz",28,146,0,166,6.7,6.1,14,174262,{fiber:2.35,sugar:1.37,sodium:114.8,potassium:177.5,calcium:16.2,iron:0.44,magnesium:49.8,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174262 Peanuts, all types, dry-roasted, with salt [SR Legacy]
+["Cashews","cashew|cashews","1 oz",28,137,0,157,5.2,8.6,12.4,169421,{fiber:0.84,sugar:1.4,sodium:179.2,potassium:158.2,calcium:12.6,iron:1.68,magnesium:72.8,vita:0,vitc:0,vitd:0,b12:0}], // fdc 169421 Nuts, cashew nuts, dry roasted, with salt added [SR Legacy]
+["Walnuts","walnut|walnuts","1 oz",28,117,0,185,4.3,3.9,18.5,170187,{fiber:1.88,sugar:0.73,sodium:0.6,potassium:123.5,calcium:27.4,iron:0.81,magnesium:44.2,vita:0.28,vitc:0.36,vitd:0,b12:0}], // fdc 170187 Nuts, walnuts, english [SR Legacy]
+["Mixed nuts","nuts|mixed nuts|trail mix","1 oz",28,140,0,172,5,7,15,170585,{fiber:1.79,sugar:1.4,sodium:1.1,potassium:180,calcium:24.4,iron:1.04,magnesium:63.6,vita:0,vitc:0.22,vitd:0,b12:0}], // fdc 170585 Nuts, mixed nuts, dry roasted, with peanuts, without salt added [SR Legacy]
+["Sunflower seeds","sunflower seeds","1 oz",28,140,0,165,5.5,6.8,14,170563,{fiber:3.11,sugar:0.76,sodium:0.8,potassium:238,calcium:19.6,iron:1.06,magnesium:36.1,vita:0,vitc:0.39,vitd:0,b12:0}], // fdc 170563 Seeds, sunflower seed kernels, dry roasted, without salt [SR Legacy]
+["Chia seeds","chia|chia seeds","1 tbsp",12,168,0,58,2,5,3.7,170554,{fiber:4.13,sugar:null,sodium:1.9,potassium:48.8,calcium:75.7,iron:0.93,magnesium:40.2,vita:null,vitc:0.19,vitd:null,b12:0}], // fdc 170554 Seeds, chia seeds, dried [SR Legacy]
+["Ground flaxseed","flax|flaxseed|ground flaxseed|flax seed","1 tbsp",7,112,0,37,1.3,2,3,169414,{fiber:1.91,sugar:0.11,sodium:2.1,potassium:56.9,calcium:17.9,iron:0.4,magnesium:27.4,vita:0,vitc:0.04,vitd:0,b12:0}], // fdc 169414 Seeds, flaxseed [SR Legacy]
+["Olive oil","olive oil|evoo","1 tbsp",13.5,216,0,119,0,0,13.5,171413,{fiber:0,sugar:0,sodium:0.3,potassium:0.1,calcium:0.1,iron:0.08,magnesium:0,vita:0,vitc:0,vitd:0,b12:0}], // fdc 171413 Oil, olive, salad or cooking [SR Legacy]
+["Vegetable oil","oil|vegetable oil|canola oil|cooking oil","1 tbsp",14,218,0,124,0,0,14,172336,{fiber:0,sugar:0,sodium:0,potassium:0,calcium:0,iron:0,magnesium:0,vita:0,vitc:0,vitd:0,b12:0}], // fdc 172336 Oil, canola [SR Legacy]
+["Coconut oil","coconut oil","1 tbsp",13.6,218,0,121,0,0,13.5,171412,{fiber:0,sugar:0,sodium:0,potassium:0,calcium:0.1,iron:0.01,magnesium:0,vita:0,vitc:0,vitd:0,b12:0}], // fdc 171412 Oil, coconut [SR Legacy]
+["Mayonnaise","mayo|mayonnaise","1 tbsp",13.8,220,0,94,0.1,0.1,10.3,171009,{fiber:0,sugar:0.08,sodium:87.6,potassium:2.8,calcium:1.1,iron:0.03,magnesium:0.1,vita:2.21,vitc:0,vitd:0.03,b12:0.02}], // fdc 171009 Salad dressing, mayonnaise, regular [SR Legacy]
+["Ranch dressing","ranch|ranch dressing","2 tbsp",30,240,0,129,0.4,1.8,13.4,173592,{fiber:0,sugar:1.41,sodium:270.3,potassium:19.2,calcium:8.4,iron:0.09,magnesium:1.5,vita:4.5,vitc:0,vitd:0.03,b12:0.05}], // fdc 173592 Salad dressing, ranch dressing, regular [SR Legacy]
+["Italian dressing","italian dressing|dressing|salad dressing","2 tbsp",29,232,0,71,0.1,3.5,6.2,171019,{fiber:0,sugar:3.12,sodium:288,potassium:24.4,calcium:3.8,iron:0.08,magnesium:1.4,vita:0.58,vitc:0.12,vitd:0,b12:0}], // fdc 171019 Salad dressing, italian dressing, commercial, regular [SR Legacy]
+["Balsamic vinaigrette","balsamic|balsamic vinaigrette|vinaigrette","2 tbsp",30,240,0,90,0,4,8,null,{fiber:null,sugar:null,sodium:null,potassium:null,calcium:null,iron:null,magnesium:null,vita:null,vitc:null,vitd:null,b12:null}], // fdc none — no balsamic vinaigrette in SR Legacy, Foundation, or FNDDS
+["Ketchup","ketchup|catsup","1 tbsp",17,240,0,17,0.2,4.7,0,168556,{fiber:0.05,sugar:3.62,sodium:154.2,potassium:47.8,calcium:2.5,iron:0.06,magnesium:2.2,vita:4.42,vitc:0.7,vitd:0,b12:0}], // fdc 168556 Catsup [SR Legacy]
+["Mustard","mustard","1 tsp",5,250,0,3,0.2,0.3,0.2,172234,{fiber:0.2,sugar:0.05,sodium:55.2,potassium:7.6,calcium:3.1,iron:0.08,magnesium:2.4,vita:0.25,vitc:0.01,vitd:0,b12:0}], // fdc 172234 Mustard, prepared, yellow [SR Legacy]
+["BBQ sauce","bbq sauce|barbecue sauce","2 tbsp",36,286,0,62,0.3,15,0.2,171829,{fiber:0.5,sugar:11.14,sodium:220.7,potassium:99.7,calcium:14.4,iron:0.39,magnesium:5.8,vita:5.04,vitc:0.07,vitd:null,b12:null}], // fdc 171829 Sauce, barbecue, KC MASTERPIECE, original [SR Legacy]
+["Soy sauce","soy sauce|soy","1 tbsp",16,255,0,9,1.3,0.8,0.1,174277,{fiber:0.13,sugar:0.06,sodium:878.9,potassium:69.6,calcium:5.3,iron:0.23,magnesium:11.8,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174277 Soy sauce made from soy and wheat (shoyu) [SR Legacy]
+["Hot sauce","hot sauce|sriracha|tabasco","1 tsp",5,0,0,1,0,0.1,0,174527,{fiber:0.01,sugar:0.06,sodium:132.2,potassium:7.2,calcium:0.4,iron:0.02,magnesium:0.2,vita:0.4,vitc:3.74,vitd:null,b12:0}], // fdc 174527 Sauce, ready-to-serve, pepper or hot [SR Legacy]
+["Marinara sauce","marinara|marinara sauce|pasta sauce|spaghetti sauce","1/2 cup",125,250,0,62,2,10,2,171192,{fiber:2.25,sugar:6.14,sodium:546.2,potassium:400,calcium:32.5,iron:0.91,magnesium:22.5,vita:38.75,vitc:2.5,vitd:0,b12:0}], // fdc 171192 Sauce, pasta, spaghetti/marinara, ready-to-serve [SR Legacy]
+["Tomato sauce (canned)","tomato sauce","1 cup",245,245,0,59,2.9,13,0.7,170054,{fiber:3.67,sugar:8.72,sodium:1161.3,potassium:727.6,calcium:34.3,iron:2.35,magnesium:36.8,vita:53.9,vitc:17.15,vitd:0,b12:0}], // fdc 170054 Tomato products, canned, sauce [SR Legacy]
+["Diced tomatoes (canned)","diced tomatoes|canned tomatoes|crushed tomatoes|can of tomatoes","1 cup",240,240,411,43,2,9.6,0.3,170051,{fiber:4.56,sugar:6.12,sodium:276,potassium:458.4,calcium:79.2,iron:1.37,magnesium:24,vita:48,vitc:30.24,vitd:0,b12:0}], // fdc 170051 Tomatoes, red, ripe, canned, packed in tomato juice [SR Legacy]
+["Chicken broth","chicken broth|broth|stock|chicken stock|beef broth","1 cup",240,240,0,38,4.9,0.9,1.4,174551,{fiber:0,sugar:0.7,sodium:734.4,potassium:206.4,calcium:9.6,iron:0.5,magnesium:2.4,vita:0,vitc:0,vitd:0,b12:0.24}], // fdc 174551 Soup, chicken broth, canned, prepared with equal volume water [SR Legacy]
+["Sugar","sugar|white sugar|brown sugar","1 tsp",4.2,200,0,16,0,4.2,0,169655,{fiber:0,sugar:4.19,sodium:0,potassium:0.1,calcium:0,iron:0,magnesium:0,vita:0,vitc:0,vitd:0,b12:0}], // fdc 169655 Sugars, granulated [SR Legacy]
+["Honey","honey","1 tbsp",21,339,0,64,0.1,17.3,0,169640,{fiber:0.04,sugar:17.25,sodium:0.8,potassium:10.9,calcium:1.3,iron:0.09,magnesium:0.4,vita:0,vitc:0.1,vitd:0,b12:0}], // fdc 169640 Honey [SR Legacy]
+["Maple syrup","maple syrup|syrup|pancake syrup","1 tbsp",20,315,0,52,0,13.4,0,169661,{fiber:0,sugar:12.09,sodium:2.4,potassium:42.4,calcium:20.4,iron:0.02,magnesium:4.2,vita:0,vitc:0,vitd:0,b12:0}], // fdc 169661 Syrups, maple [SR Legacy]
+["Jam / jelly","jam|jelly|preserves","1 tbsp",20,320,0,56,0.1,13.8,0,169641,{fiber:0.22,sugar:9.7,sodium:6.4,potassium:15.4,calcium:4,iron:0.1,magnesium:0.8,vita:0,vitc:1.76,vitd:0,b12:0}], // fdc 169641 Jams and preserves [SR Legacy]
+["Salt","salt","1 tsp",6,288,0,0,0,0,0,173468,{fiber:0,sugar:0,sodium:2325.5,potassium:0.5,calcium:1.4,iron:0.02,magnesium:0.1,vita:0,vitc:0,vitd:0,b12:0}], // fdc 173468 Salt, table [SR Legacy]
+["Black pepper","black pepper|ground pepper","1 tsp",2.3,0,0,6,0.2,1.5,0.1,170931,{fiber:0.58,sugar:0.01,sodium:0.5,potassium:30.6,calcium:10.2,iron:0.22,magnesium:3.9,vita:0.62,vitc:0,vitd:0,b12:0}], // fdc 170931 Spices, pepper, black [SR Legacy]
+["Chili powder","chili powder","1 tsp",2.7,0,0,8,0.4,1.4,0.4,171319,{fiber:0.94,sugar:0.19,sodium:77.4,potassium:52.6,calcium:8.9,iron:0.47,magnesium:4,vita:40.04,vitc:0.02,vitd:0,b12:0}], // fdc 171319 Spices, chili powder [SR Legacy]
+["Cumin","cumin","1 tsp",2,0,0,8,0.4,0.9,0.4,170923,{fiber:0.21,sugar:0.04,sodium:3.4,potassium:35.8,calcium:18.6,iron:1.33,magnesium:7.3,vita:1.28,vitc:0.15,vitd:0,b12:0}], // fdc 170923 Spices, cumin seed [SR Legacy]
+["Cinnamon","cinnamon","1 tsp",2.6,0,0,6,0.1,2.1,0,171320,{fiber:1.38,sugar:0.06,sodium:0.3,potassium:11.2,calcium:26.1,iron:0.22,magnesium:1.6,vita:0.39,vitc:0.1,vitd:0,b12:0}], // fdc 171320 Spices, cinnamon, ground [SR Legacy]
+["Coffee (black)","coffee|black coffee|cup of coffee|cold brew|iced coffee|americano|espresso","1 cup (8 oz)",237,237,0,2,0.3,0,0,171890,{fiber:0,sugar:0,sodium:4.7,potassium:116.1,calcium:4.7,iron:0.02,magnesium:7.1,vita:0,vitc:0,vitd:0,b12:0}], // fdc 171890 Beverages, coffee, brewed, prepared with tap water [SR Legacy]
+["Coffee with milk","coffee with milk|coffee with a splash of milk","1 cup + 2 tbsp milk",267,0,0,17,1.3,1.5,0.6,171890,{fiber:0,sugar:1.52,sodium:18.8,potassium:158.1,calcium:40.7,iron:0.03,magnesium:10.4,vita:16.5,vitc:0.06,vitd:0.36,b12:0.16}], // fdc 171890 1 cup brewed coffee plus 2 tbsp 2% milk; 171890 Beverages, coffee, brewed, prepared with tap water (237 g, SR Legacy) + 171267 Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D (30 g, SR Legacy)
+["Coffee with cream and sugar","coffee with cream and sugar|coffee with cream|coffee with sugar","1 cup",255,0,0,55,0.5,8.5,2,2710460,{fiber:0,sugar:8.8,sodium:17.9,potassium:107.1,calcium:10.2,iron:0.1,magnesium:10.2,vita:0,vitc:0,vitd:0,b12:0}], // fdc 2710460 Coffee, pre-lightened and pre-sweetened with sugar [FNDDS] — pre-lightened, pre-sweetened coffee
+["Latte (2% milk)","latte|caffe latte|grande latte","16 oz",480,240,0,190,13,19,7,2710386,{fiber:0,sugar:19.49,sodium:168,potassium:729.6,calcium:504,iron:0.1,magnesium:110.4,vita:331.2,vitc:0.96,vitd:4.32,b12:1.78}], // fdc 2710386 Coffee, Latte [FNDDS]
+["Cappuccino (2% milk)","cappuccino","16 oz",480,240,0,140,10,14,5,2710472,{fiber:0,sugar:11.81,sodium:110.4,potassium:480,calcium:312,iron:0.1,magnesium:96,vita:201.6,vitc:0.48,vitd:2.88,b12:1.06}], // fdc 2710472 Coffee, Cappuccino [FNDDS]
+["Tea","tea|green tea|black tea|hot tea|iced tea unsweetened","1 cup",237,237,0,2,0,0.7,0,173227,{fiber:0,sugar:0,sodium:7.1,potassium:87.7,calcium:0,iron:0.05,magnesium:7.1,vita:0,vitc:0,vitd:0,b12:0}], // fdc 173227 Beverages, tea, black, brewed, prepared with tap water [SR Legacy]
+["Sweet tea","sweet tea","16 oz",480,240,0,180,0,45,0,2710494,{fiber:0.48,sugar:33.94,sodium:19.2,potassium:62.4,calcium:14.4,iron:0.1,magnesium:4.8,vita:0,vitc:0,vitd:0,b12:0}], // fdc 2710494 Tea, iced, instant, black, pre-sweetened with sugar [FNDDS]
+["Soda","soda|coke|pepsi|sprite|pop|coca cola|dr pepper|mountain dew","1 can (12 oz)",368,245,0,140,0,39,0,174852,{fiber:0,sugar:36.58,sodium:11,potassium:18.4,calcium:3.7,iron:0.07,magnesium:0,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174852 Beverages, carbonated, cola, regular [SR Legacy]
+["Diet soda","diet soda|diet coke|coke zero|diet pepsi|zero sugar soda","1 can (12 oz)",355,0,0,0,0,0,0,175099,{fiber:0,sugar:0,sodium:28.4,potassium:28.4,calcium:10.7,iron:0.39,magnesium:3.5,vita:0,vitc:0,vitd:0,b12:0}], // fdc 175099 Beverages, carbonated, low calorie, cola or pepper-type, with aspartame, contains caffeine [SR Legacy]
+["Water","water|sparkling water|seltzer|la croix","1 cup",237,237,0,0,0,0,0,174158,{fiber:0,sugar:0,sodium:4.7,potassium:0,calcium:23.7,iron:0,magnesium:4.7,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174158 Water, bottled, generic [SR Legacy]
+["Orange juice","orange juice|oj","1 cup",248,248,0,112,1.7,25.8,0.5,169098,{fiber:0.5,sugar:20.83,sodium:2.5,potassium:496,calcium:27.3,iron:0.5,magnesium:27.3,vita:24.8,vitc:124,vitd:0,b12:0}], // fdc 169098 Orange juice, raw (Includes foods for USDA's Food Distribution Program) [SR Legacy]
+["Apple juice","apple juice|juice","1 cup",248,248,0,114,0.2,28,0.3,167771,{fiber:0.5,sugar:23.86,sodium:9.9,potassium:250.5,calcium:19.8,iron:0.3,magnesium:12.4,vita:0,vitc:95.48,vitd:0,b12:0}], // fdc 167771 Apple juice, canned or bottled, unsweetened, with added ascorbic acid [SR Legacy]
+["Sports drink","gatorade|powerade|sports drink","1 bottle (20 oz)",591,240,0,140,0,36,0,2710769,{fiber:0,sugar:30.97,sodium:230.5,potassium:88.7,calcium:5.9,iron:0.3,magnesium:0,vita:0,vitc:2.36,vitd:0,b12:0}], // fdc 2710769 Sports drink (Gatorade G) [FNDDS]
+["Energy drink","energy drink|monster|red bull","1 can (16 oz)",473,240,0,210,0,54,0,171935,{fiber:0,sugar:51.7,sodium:364.2,potassium:9.5,calcium:0,iron:0.19,magnesium:0,vita:0,vitc:0,vitd:0,b12:12.16}], // fdc 171935 Beverages, Energy Drink, Monster, fortified with vitamins C, B2, B3, B6, B12 [SR Legacy]
+["Fruit smoothie","smoothie|fruit smoothie","16 oz",480,240,0,270,4,64,1,167796,{fiber:3.36,sugar:53.52,sodium:28.8,potassium:792,calcium:52.8,iron:2.02,magnesium:48,vita:100.8,vitc:39.36,vitd:0,b12:3.02}], // fdc 167796 Fruit juice smoothie, NAKED JUICE, GREEN MACHINE [SR Legacy]
+["Beer","beer|beers|lager|bud|budweiser|pint","1 can (12 oz)",356,0,0,153,1.6,12.6,0,168746,{fiber:0,sugar:0,sodium:14.2,potassium:96.1,calcium:14.2,iron:0.07,magnesium:21.4,vita:0,vitc:0,vitd:0,b12:0.07}], // fdc 168746 Alcoholic beverage, beer, regular, all [SR Legacy]
+["Light beer","light beer|bud light|miller lite|coors light|michelob ultra","1 can (12 oz)",356,0,0,103,0.9,5.8,0,168749,{fiber:0,sugar:0.32,sodium:14.2,potassium:74.8,calcium:14.2,iron:0.11,magnesium:17.8,vita:0,vitc:0,vitd:0,b12:0.07}], // fdc 168749 Alcoholic beverage, beer, light [SR Legacy]
+["IPA beer","ipa|craft beer","1 can (12 oz)",356,0,0,200,2,18,0,171906,{fiber:0,sugar:0,sodium:14.2,potassium:220.7,calcium:28.5,iron:0.11,magnesium:42.7,vita:0,vitc:0,vitd:0,b12:0.07}], // fdc 171906 Alcoholic beverages, beer, higher alcohol [SR Legacy] — no IPA-named entry; higher-alcohol beer
+["Red wine","wine|red wine|glass of wine","1 glass (5 oz)",147,0,0,125,0.1,3.8,0,173190,{fiber:0,sugar:0.91,sodium:5.9,potassium:186.7,calcium:11.8,iron:0.68,magnesium:17.6,vita:0,vitc:0,vitd:0,b12:0}], // fdc 173190 Alcoholic beverage, wine, table, red [SR Legacy]
+["White wine","white wine","1 glass (5 oz)",147,0,0,121,0.1,3.8,0,174837,{fiber:0,sugar:1.41,sodium:7.3,potassium:104.4,calcium:13.2,iron:0.4,magnesium:14.7,vita:0,vitc:0,vitd:0,b12:0}], // fdc 174837 Alcoholic beverage, wine, table, white [SR Legacy]
+["Liquor shot","shot|vodka|whiskey|bourbon|tequila|rum|gin","1 shot (1.5 oz)",42,0,0,97,0,0,0,174818,{fiber:0,sugar:0,sodium:0.4,potassium:0.4,calcium:0,iron:0,magnesium:0,vita:null,vitc:0,vitd:null,b12:0}], // fdc 174818 Alcoholic beverage, distilled, vodka, 80 proof [SR Legacy]
+["Margarita","margarita","1 drink",200,0,0,275,0.3,36,0.2,2710638,{fiber:0,sugar:32.2,sodium:408,potassium:44,calcium:4,iron:0.18,magnesium:2,vita:0,vitc:4,vitd:0,b12:0}], // fdc 2710638 Margarita [FNDDS]
+["Burger (1/4 lb, on bun)","burger|hamburger|cheeseburger patty|quarter pounder|beef burger","1 burger",200,0,0,450,25,40,20,170710,{fiber:2.2,sugar:7.34,sodium:748,potassium:450,calcium:174,iron:3.46,magnesium:48,vita:4,vitc:0.6,vitd:0.2,b12:3.32}], // fdc 170710 Fast foods, hamburger, large, single patty, with condiments [SR Legacy]
+["Cheeseburger (1/4 lb)","cheeseburger|cheese burger","1 burger",220,0,0,520,30,42,26,170294,{fiber:3.74,sugar:10.27,sodium:1058.2,potassium:462,calcium:250.8,iron:5.65,magnesium:52.8,vita:127.6,vitc:0,vitd:0.22,b12:2.2}], // fdc 170294 Fast foods, cheeseburger; single, large patty; plain [SR Legacy]
+["Chicken sandwich (fast food)","chicken sandwich|crispy chicken sandwich|chick fil a sandwich","1 sandwich",200,0,0,450,28,45,18,170790,{fiber:2.8,sugar:7.28,sodium:1506,potassium:490,calcium:116,iron:3.54,magnesium:48,vita:null,vitc:null,vitd:null,b12:0.26}], // fdc 170790 CHICK-FIL-A, chicken sandwich [SR Legacy]
+["Turkey sandwich","turkey sandwich|sandwich","1 sandwich",220,0,0,350,22,40,10,2706981,{fiber:2.64,sugar:7.04,sodium:1372.8,potassium:528,calcium:255.2,iron:4.27,magnesium:50.6,vita:0,vitc:0,vitd:0.22,b12:0.4}], // fdc 2706981 Turkey sandwich on white [FNDDS]
+["Ham and cheese sandwich","ham and cheese sandwich|ham and cheese|ham sandwich","1 sandwich",200,0,0,360,21,36,15,2706965,{fiber:2,sugar:5.54,sodium:1432,potassium:496,calcium:464,iron:3.56,magnesium:48,vita:82,vitc:0,vitd:1.6,b12:0.76}], // fdc 2706965 Ham sandwich on white, with cheese [FNDDS]
+["PB&J sandwich","pb&j|pbj|peanut butter and jelly|peanut butter and jelly sandwich|pb and j","1 sandwich",100,0,0,350,12,45,15,2707555,{fiber:2.8,sugar:15,sodium:368,potassium:232,calcium:128,iron:2.33,magnesium:64,vita:0,vitc:0.2,vitd:0,b12:0}], // fdc 2707555 Peanut butter and jelly sandwich, with regular peanut butter, regular jelly, on white bread [FNDDS]
+["Grilled cheese","grilled cheese|grilled cheese sandwich","1 sandwich",120,0,0,380,14,32,22,2705802,{fiber:1.44,sugar:5.41,sodium:986.4,potassium:166.8,calcium:595.2,iron:2.41,magnesium:30,vita:226.8,vitc:0,vitd:3.12,b12:0.61}], // fdc 2705802 Grilled cheese sandwich, American cheese, on white bread [FNDDS]
+["Sub sandwich (6 in turkey)","sub|subway|sub sandwich|hoagie","1 6-inch sub",220,0,0,280,18,46,3.5,170706,{fiber:2.86,sugar:6.8,sodium:697.4,potassium:556.6,calcium:371.8,iron:4.05,magnesium:50.6,vita:4.4,vitc:2.64,vitd:0,b12:0.26}], // fdc 170706 Fast foods, submarine sandwich, turkey breast on white bread with lettuce and tomato [SR Legacy]
+["Pizza slice (cheese)","pizza|cheese pizza|slice of pizza|pizza slice|slice","1 slice (14 in pie)",107,0,0,285,12.2,35.7,10.4,173292,{fiber:2.46,sugar:3.83,sodium:639.9,potassium:184,calcium:201.2,iron:2.65,magnesium:25.7,vita:73.83,vitc:1.5,vitd:0,b12:0.45}], // fdc 173292 Fast Food, Pizza Chain, 14" pizza, cheese topping, regular crust [SR Legacy]
+["Pizza slice (pepperoni)","pepperoni pizza","1 slice (14 in pie)",111,0,0,313,13,35.5,13.2,170762,{fiber:2.55,sugar:3.57,sodium:971.2,potassium:247.5,calcium:239.8,iron:2.16,magnesium:27.8,vita:77.7,vitc:2.22,vitd:0,b12:0.84}], // fdc 170762 Fast Food, Pizza Chain, 14" pizza, pepperoni topping, thin crust [SR Legacy]
+["Burrito","burrito|beef burrito|bean burrito|chicken burrito","1 burrito",300,0,0,480,20,60,18,172102,{fiber:20.7,sugar:4.08,sodium:1977,potassium:813,calcium:117,iron:9.36,magnesium:108,vita:39,vitc:3,vitd:null,b12:0.42}], // fdc 172102 Burrito, beef and bean, microwaved [SR Legacy]
+["Burrito bowl","burrito bowl|chipotle bowl|rice bowl","1 bowl",450,0,0,650,40,70,22,2708556,{fiber:0,sugar:0.41,sodium:1336.5,potassium:972,calcium:396,iron:7.51,magnesium:76.5,vita:117,vitc:0,vitd:0.45,b12:8.28}], // fdc 2708556 Burrito bowl, beef or pork [FNDDS]
+["Taco","taco|tacos|hard taco|soft taco","1 taco",78,0,0,170,8,13,10,170689,{fiber:3.04,sugar:0.7,sodium:309.7,potassium:163,calcium:69.4,iron:0.93,magnesium:25,vita:15.6,vitc:0.31,vitd:0.08,b12:0.73}], // fdc 170689 Fast foods, taco with beef, cheese and lettuce, hard shell [SR Legacy]
+["Quesadilla","quesadilla|cheese quesadilla","1 (8 in)",180,0,0,470,19,38,27,169035,{fiber:3.06,sugar:3.98,sodium:1261.8,potassium:183.6,calcium:774,iron:2.74,magnesium:43.2,vita:279,vitc:null,vitd:null,b12:1.78}], // fdc 169035 Restaurant, Mexican, cheese quesadilla [SR Legacy]
+["Nachos","nachos","1 plate",250,0,0,700,20,70,38,170291,{fiber:8,sugar:5.42,sodium:782.5,potassium:905,calcium:157.5,iron:1.88,magnesium:105,vita:12.5,vitc:2.75,vitd:0,b12:0.17}], // fdc 170291 Fast foods, nachos, with cheese [SR Legacy]
+["California roll","sushi|california roll|sushi roll","1 roll (8 pc)",200,0,25,260,9,38,7,2708961,{fiber:2,sugar:4.26,sodium:856,potassium:96,calcium:12,iron:0.42,magnesium:26,vita:8,vitc:1.8,vitd:0,b12:0.2}], // fdc 2708961 Sushi roll, California [FNDDS]
+["Lasagna","lasagna|lasagne","1 piece",250,0,0,380,22,36,16,169850,{fiber:3.75,sugar:7.88,sodium:1165,potassium:637.5,calcium:492.5,iron:1.98,magnesium:55,vita:202.5,vitc:1.75,vitd:0,b12:1.65}], // fdc 169850 Restaurant, Italian, lasagna with meat [SR Legacy]
+["Chili (beef and bean)","chili|chili con carne","1 cup",253,253,0,260,18,25,10,172097,{fiber:8.35,sugar:4.73,sodium:1136,potassium:667.9,calcium:83.5,iron:3.39,magnesium:70.8,vita:58.19,vitc:0.51,vitd:0,b12:0.71}], // fdc 172097 Chili con carne with beans, canned entree [SR Legacy]
+["Chicken noodle soup","soup|chicken noodle soup|chicken soup","1 cup",241,241,0,62,3.2,7.3,2.4,172909,{fiber:1.21,sugar:0,sodium:807.4,potassium:57.8,calcium:12.1,iron:0.8,magnesium:9.6,vita:26.51,vitc:0,vitd:0,b12:0.14}], // fdc 172909 Soup, chicken noodle, canned, prepared with equal volume water [SR Legacy]
+["Tomato soup","tomato soup","1 cup",248,248,0,74,2,16,0.7,171176,{fiber:1.24,sugar:9.99,sodium:461.3,potassium:682,calcium:19.8,iron:0.72,magnesium:17.4,vita:24.8,vitc:15.62,vitd:0,b12:0}], // fdc 171176 Soup, tomato, canned, prepared with equal volume water, commercial [SR Legacy]
+["Mac and cheese","mac and cheese|mac n cheese|macaroni and cheese|kraft mac and cheese","1 cup",200,200,0,350,10,47,13,169770,{fiber:2.4,sugar:3.14,sodium:920,potassium:160,calcium:170,iron:2.34,magnesium:30,vita:44,vitc:null,vitd:null,b12:0.54}], // fdc 169770 Macaroni and cheese, box mix with cheese sauce, prepared [SR Legacy]
+["Fried rice","fried rice","1 cup",198,198,0,238,5.6,45,4.1,167668,{fiber:2.18,sugar:1.11,sodium:766.3,potassium:150.5,calcium:23.8,iron:1.31,magnesium:19.8,vita:43.56,vitc:7.52,vitd:0,b12:0}], // fdc 167668 Restaurant, Chinese, fried rice, without meat [SR Legacy]
+["Spaghetti and meatballs","spaghetti and meatballs|spaghetti with meat sauce|spaghetti bolognese","1 plate (2 cups)",500,250,0,660,30,80,22,167680,{fiber:8,sugar:9.1,sodium:1150,potassium:860,calcium:85,iron:4.85,magnesium:85,vita:60,vitc:3.5,vitd:null,b12:0.85}], // fdc 167680 Restaurant, Italian, spaghetti with meat sauce [SR Legacy]
+["Ramen (instant)","ramen|instant ramen|cup noodles|ramen noodles","1 package",81,0,0,380,8,52,14,171177,{fiber:2.35,sugar:1.6,sodium:1502.5,potassium:146.6,calcium:17,iron:3.33,magnesium:20.2,vita:0.81,vitc:0.24,vitd:0,b12:0.2}], // fdc 171177 Soup, ramen noodle, any flavor, dry [SR Legacy]
+["Meatballs","meatball|meatballs","1 meatball",30,0,0,86,4.3,2.4,6.7,171638,{fiber:0.69,sugar:1.04,sodium:199.8,potassium:88.8,calcium:24,iron:0.53,magnesium:9.3,vita:6.6,vitc:0,vitd:0.03,b12:0.3}], // fdc 171638 Meatballs, frozen, Italian style [SR Legacy]
+["Potato chips","chips|potato chips|lays|bag of chips","1 oz (~15 chips)",28,0,0,152,2,15,10,169677,{fiber:0.87,sugar:0.09,sodium:147.6,potassium:334.9,calcium:5.9,iron:0.36,magnesium:17.6,vita:0,vitc:6.05,vitd:0,b12:0}], // fdc 169677 Snacks, potato chips, plain, salted [SR Legacy]
+["Tortilla chips","tortilla chips|doritos","1 oz",28,0,0,138,2,18,7,167558,{fiber:1.51,sugar:0.22,sodium:91.8,potassium:51,calcium:29.7,iron:0.43,magnesium:23.5,vita:0,vitc:0,vitd:0,b12:0.1}], // fdc 167558 Snacks, tortilla chips, plain, white corn, salted [SR Legacy]
+["Pretzels","pretzel|pretzels","1 oz",28,0,0,108,2.9,22.6,0.8,167555,{fiber:0.95,sugar:0.62,sodium:347.2,potassium:62.4,calcium:7.6,iron:1.28,magnesium:8.1,vita:0,vitc:0.59,vitd:0,b12:0}], // fdc 167555 Snacks, pretzels, hard, plain, salted [SR Legacy]
+["Chocolate chip cookie","cookie|cookies|chocolate chip cookie","1 medium",16,0,0,78,0.9,10.3,3.9,172716,{fiber:0.32,sugar:5.26,sodium:49.8,potassium:27.4,calcium:3.4,iron:0.89,magnesium:6.6,vita:0,vitc:0,vitd:0,b12:0}], // fdc 172716 Cookies, chocolate chip, commercially prepared, regular, higher fat, enriched [SR Legacy]
+["Brownie","brownie|brownies","1 square",56,0,0,227,2.7,36,9,172713,{fiber:1.18,sugar:20.5,sodium:160.2,potassium:83.4,calcium:16.2,iron:1.26,magnesium:17.4,vita:11.2,vitc:0,vitd:0,b12:0.04}], // fdc 172713 Cookies, brownies, commercially prepared [SR Legacy]
+["Glazed donut","donut|doughnut|glazed donut","1 medium",64,0,0,260,3,31,14,172758,{fiber:1.34,sugar:14.56,sodium:202.2,potassium:65.3,calcium:64.6,iron:1.52,magnesium:10.9,vita:3.2,vitc:0.77,vitd:0.06,b12:0.07}], // fdc 172758 Doughnuts, yeast-leavened, glazed, enriched (includes honey buns) [SR Legacy]
+["Chocolate cake","cake|chocolate cake|slice of cake","1 slice",95,0,0,350,4,51,15,174934,{fiber:2.09,sugar:37.96,sodium:330.6,potassium:256.5,calcium:28.5,iron:2.89,magnesium:29.4,vita:0.95,vitc:0.1,vitd:0,b12:0}], // fdc 174934 Cake, chocolate, commercially prepared with chocolate frosting, in-store bakery [SR Legacy]
+["Apple pie","pie|apple pie|slice of pie","1 slice",125,0,0,296,2.4,42.5,13.8,175011,{fiber:2,sugar:19.56,sodium:251.2,potassium:81.2,calcium:13.8,iron:0.56,magnesium:8.8,vita:40,vitc:4,vitd:0,b12:0.01}], // fdc 175011 Pie, apple, commercially prepared, enriched flour [SR Legacy]
+["Dark chocolate","dark chocolate","1 oz",28,0,0,170,2.2,13,12,170273,{fiber:3.05,sugar:6.72,sodium:5.6,potassium:200.2,calcium:20.4,iron:3.33,magnesium:63.8,vita:0.56,vitc:null,vitd:null,b12:0.08}], // fdc 170273 Chocolate, dark, 70-85% cacao solids [SR Legacy]
+["Milk chocolate bar","chocolate|chocolate bar|candy bar|hershey bar","1 bar (1.55 oz)",44,0,0,235,3.4,26,13,167587,{fiber:1.5,sugar:22.66,sodium:34.8,potassium:163.7,calcium:83.2,iron:1.03,magnesium:27.7,vita:25.96,vitc:0,vitd:0,b12:0.33}], // fdc 167587 Candies, milk chocolate [SR Legacy]
 ];
 var FOODS = ROWS.map(function (r, i) {
   return { id: i, name: r[0], aliases: r[1].split("|"), label: r[2], grams: r[3],
-           cupG: r[4], pieceG: r[5], kcal: r[6], p: r[7], c: r[8], f: r[9] };
+           cupG: r[4], pieceG: r[5], kcal: r[6], p: r[7], c: r[8], f: r[9],
+           fdcId: r[10], micros: r[11] };
 });
 root.CADENCE_FOODS = FOODS;
 if (typeof module !== "undefined" && module.exports) module.exports = FOODS;

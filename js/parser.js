@@ -200,6 +200,60 @@ function gramsFor(food, qty, unit) {
 
 function fmtQty(q) { return (Math.round(q * 100) / 100).toString(); }
 
+/* Nutrient numbers verified against FoodData Central nutrient.csv (SR Legacy):
+ * 291 fiber, 269 sugars total, 307 sodium, 306 potassium, 301 calcium, 303 iron,
+ * 304 magnesium, 320 vitamin A RAE, 401 vitamin C, 328 vitamin D (D2+D3) µg, 418 B12. */
+var MICRO_KEYS = ["fiber", "sugar", "sodium", "potassium", "calcium", "iron", "magnesium", "vita", "vitc", "vitd", "b12"];
+var USDA_MICRO = { fiber: ["291"], sugar: ["269"], sodium: ["307"], potassium: ["306"], calcium: ["301"], iron: ["303"], magnesium: ["304"], vita: ["320"], vitc: ["401"], vitd: ["328"], b12: ["418"] };
+function roundMicro(k, v) {
+  var p = (k === "sodium" || k === "potassium" || k === "calcium" || k === "magnesium") ? 10 : 100;
+  return Math.round(v * p) / p;
+}
+function scaleMicros(micros, mult) {
+  if (!micros) return null;
+  var o = {};
+  MICRO_KEYS.forEach(function (k) {
+    if (micros[k] == null || micros[k] === "") o[k] = null;
+    else o[k] = roundMicro(k, +micros[k] * mult);
+  });
+  return o;
+}
+function sumMicros(items) {
+  var vals = {}, gap = {}, legacy = false;
+  MICRO_KEYS.forEach(function (k) { vals[k] = 0; gap[k] = false; });
+  (items || []).forEach(function (it) {
+    if (!it || !it.micros) { legacy = true; MICRO_KEYS.forEach(function (k) { gap[k] = true; }); return; }
+    MICRO_KEYS.forEach(function (k) {
+      if (it.micros[k] == null) gap[k] = true;
+      else vals[k] += +it.micros[k];
+    });
+  });
+  var out = {};
+  MICRO_KEYS.forEach(function (k) { out[k] = gap[k] ? null : roundMicro(k, vals[k]); });
+  return out;
+}
+/* Day/recipe display: known amounts are summed; missing values are flagged, never treated as zero. */
+function collectMicros(items) {
+  var acc = {}, legacy = 0;
+  MICRO_KEYS.forEach(function (k) { acc[k] = { sum: 0, known: 0, missing: 0 }; });
+  (items || []).forEach(function (it) {
+    if (!it || !it.micros) {
+      legacy++;
+      MICRO_KEYS.forEach(function (k) { acc[k].missing++; });
+      return;
+    }
+    MICRO_KEYS.forEach(function (k) {
+      if (it.micros[k] == null) acc[k].missing++;
+      else { acc[k].sum += +it.micros[k]; acc[k].known++; }
+    });
+  });
+  MICRO_KEYS.forEach(function (k) { acc[k].sum = roundMicro(k, acc[k].sum); });
+  return { acc: acc, legacy: legacy };
+}
+function divideMicros(micros, servings) {
+  return scaleMicros(micros, 1 / Math.max(1, +servings || 1));
+}
+
 function resolveSegment(seg, index, opts) {
   opts = opts || {};
   var pq = parseQty(seg);
@@ -209,14 +263,16 @@ function resolveSegment(seg, index, opts) {
     if (r) {
       var q = pq.qty, ps = r.perServing || { kcal: 0, p: 0, c: 0, f: 0 };
       return Object.assign(base, { source: "recipe", recipeId: r.id, food: r.name + " (" + fmtQty(q) + (q === 1 ? " serving" : " servings") + ")",
-        servings: q, matched: true, kcal: round0(ps.kcal * q), p: round1(ps.p * q), c: round1(ps.c * q), f: round1(ps.f * q) });
+        servings: q, matched: true, kcal: round0(ps.kcal * q), p: round1(ps.p * q), c: round1(ps.c * q), f: round1(ps.f * q),
+        micros: scaleMicros(ps.micros, q) });
     }
   }
   var m = matchFood(pq.name || seg, index);
-  if (!m) return Object.assign(base, { source: "manual", food: pq.name || seg, matched: false, kcal: 0, p: 0, c: 0, f: 0, servings: pq.qty });
+  if (!m) return Object.assign(base, { source: "manual", food: pq.name || seg, matched: false, kcal: 0, p: 0, c: 0, f: 0, servings: pq.qty, micros: null });
   var f = m.food, g = gramsFor(f, pq.qty, pq.unit), mult = g.grams / f.grams;
   return Object.assign(base, { source: "db", foodId: f.id, food: f.name, label: f.label, grams: round0(g.grams), servings: round1(mult * 100) / 100,
-    matched: true, score: m.score, note: g.note || (m.score < 50 ? "best guess \u2014 check" : ""), kcal: round0(f.kcal * mult), p: round1(f.p * mult), c: round1(f.c * mult), f: round1(f.f * mult) });
+    matched: true, score: m.score, note: g.note || (m.score < 50 ? "best guess \u2014 check" : ""), kcal: round0(f.kcal * mult), p: round1(f.p * mult), c: round1(f.c * mult), f: round1(f.f * mult),
+    fdcId: f.fdcId || null, micros: scaleMicros(f.micros, mult) });
 }
 
 function parsePhrase(text, index, opts) {
@@ -233,12 +289,25 @@ function nutrientVal(food, nums, names) {
   var ns = food.foodNutrients || [];
   for (var i = 0; i < ns.length; i++) {
     var n = ns[i];
-    if (nums.indexOf(String(n.nutrientNumber)) >= 0 && (!n.unitName || n.unitName.toUpperCase() !== "KJ")) return n.value || 0;
+    if (nums.indexOf(String(n.nutrientNumber)) >= 0 && (!n.unitName || n.unitName.toUpperCase() !== "KJ")) {
+      if (n.value == null || n.value === "") return null;
+      return +n.value;
+    }
   }
-  for (i = 0; i < ns.length; i++) {
-    if (names.test(ns[i].nutrientName || "") && (ns[i].unitName || "").toUpperCase() === "KCAL") return ns[i].value || 0;
+  if (names) {
+    for (i = 0; i < ns.length; i++) {
+      if (names.test(ns[i].nutrientName || "") && (ns[i].unitName || "").toUpperCase() === "KCAL") {
+        if (ns[i].value == null || ns[i].value === "") return null;
+        return +ns[i].value;
+      }
+    }
   }
   return null;
+}
+function usdaMicros(food) {
+  var o = {};
+  MICRO_KEYS.forEach(function (k) { o[k] = nutrientVal(food, USDA_MICRO[k]); });
+  return o;
 }
 function usdaSearch(query, apiKey, fetchImpl) {
   var f = fetchImpl || (typeof fetch !== "undefined" ? fetch : null);
@@ -261,7 +330,8 @@ function usdaSearch(query, apiKey, fetchImpl) {
       if (kcal === null) continue;
       return { fdcId: foods[i].fdcId, name: foods[i].description, per100: {
         kcal: kcal, p: nutrientVal(foods[i], ["203"], /^protein/i) || 0,
-        c: nutrientVal(foods[i], ["205"], /carbohydrate/i) || 0, f: nutrientVal(foods[i], ["204"], /total lipid/i) || 0 } };
+        c: nutrientVal(foods[i], ["205"], /carbohydrate/i) || 0, f: nutrientVal(foods[i], ["204"], /total lipid/i) || 0,
+        micros: usdaMicros(foods[i]) } };
     }
     return null;
   });
@@ -277,12 +347,14 @@ function applyUsda(item, res) {
   var m = grams / 100;
   item.source = "usda"; item.fdcId = res.fdcId; item.food = res.name; item.matched = true; item.grams = round0(grams); item.note = note;
   item.kcal = round0(res.per100.kcal * m); item.p = round1(res.per100.p * m); item.c = round1(res.per100.c * m); item.f = round1(res.per100.f * m);
+  item.micros = scaleMicros(res.per100.micros, m);
   return item;
 }
 
 var api = { normalize: normalize, singular: singular, keyOf: keyOf, buildIndex: buildIndex, splitPhrase: splitPhrase,
   parseQty: parseQty, matchFood: matchFood, matchRecipe: matchRecipe, gramsFor: gramsFor, resolveSegment: resolveSegment,
-  parsePhrase: parsePhrase, totals: totals, usdaSearch: usdaSearch, applyUsda: applyUsda, round1: round1, UNITS: UNITS };
+  parsePhrase: parsePhrase, totals: totals, usdaSearch: usdaSearch, applyUsda: applyUsda, round1: round1, UNITS: UNITS,
+  MICRO_KEYS: MICRO_KEYS, scaleMicros: scaleMicros, sumMicros: sumMicros, collectMicros: collectMicros, divideMicros: divideMicros };
 root.CadenceParser = api;
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
