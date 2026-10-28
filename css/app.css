@@ -37,6 +37,9 @@ main{max-width:720px;margin:0 auto;padding:4px 14px}
 .cal-day.has i{position:absolute;left:50%;bottom:5px;width:4px;height:4px;border-radius:50%;background:var(--forest);transform:translateX(-50%)}
 .cal-day.on.has i{background:var(--paper)}
 .cal-day:disabled{color:var(--muted);opacity:.4;cursor:default}
+.cal-jump{display:block;width:100%;margin-top:2px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font:inherit}
+.trend-range{margin:8px 0 10px}
+.food-more{padding:10px 14px}
 .trend{margin:0 0 12px}
 .trend h3{font-size:.88rem;margin:0 0 2px;font-weight:650}
 .trend svg{width:100%;height:auto;display:block;touch-action:manipulation}

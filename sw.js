@@ -1,6 +1,6 @@
 /* Cadence service worker: caches the app shell for offline use.
  * Bump VERSION whenever any shell file changes so phones pick up the update. */
-var VERSION = "5.0.0";
+var VERSION = "5.1.0";
 var CACHE = "cadence-shell-v" + VERSION;
 var SHELL = ["./", "index.html", "css/app.css", "js/foods.js", "js/parser.js", "js/lock.js", "js/app.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png"];

@@ -48,6 +48,8 @@
       <button type="button" class="navbtn" id="cal-next" aria-label="Next month">&#8250;</button>
     </div>
     <div class="cal-grid" id="cal-grid"></div>
+    <label class="lbl" for="day-input">Jump to a date</label>
+    <input type="date" id="day-input" class="cal-jump">
   </div>
   <p class="today-who" id="today-who"></p>
   <div class="card ringcard">
@@ -80,7 +82,12 @@
   </div>
   <section class="card" id="trends" aria-label="Trends">
     <h2>Trends</h2>
-    <p class="hint">Daily totals on days with food logged, up to 60 days. Days with nothing logged are left out, not shown as zero. The dashed line is this profile's goal.</p>
+    <p class="hint">Daily totals for this profile across the past 365 days. Days with nothing logged are left out, not shown as zero. The dashed line is this profile's goal.</p>
+    <div class="seg trend-range" id="trend-range" role="tablist" aria-label="Trend range">
+      <button type="button" data-range="30">30d</button>
+      <button type="button" data-range="90" class="active">90d</button>
+      <button type="button" data-range="365">1y</button>
+    </div>
     <div id="trend-charts"></div>
     <p class="hint" id="trend-tip" hidden></p>
   </section>

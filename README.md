@@ -29,11 +29,13 @@ Cadence is a private food, macro and weight tracker. It's plain HTML, CSS and Ja
 
 ## Days and trends
 
-Today opens on the current day. The header has back and forward arrows (forward stops at today), the date, and a **Today** button when you are looking at another day. Tap the date for a month calendar. Days that already have food get a dot. Future days are disabled. Swipe left or right on the page to move a day. The ring, macro and nutrient bars, and the entry list (with Edit and Delete) all follow the day you picked.
+Today opens on the current day. The header has back and forward arrows, the date, and a **Today** button when you are looking at another day. Forward stops at today. Back stops 364 days earlier, so the reachable span is 365 days including today. Tap the date for a month calendar. Days that already have food get a dot. Days outside that 365-day window are disabled, and the date field in the calendar has the same minimum and maximum. Swipe left or right on the page to move a day. The ring, macro and nutrient bars, and the entry list (with Edit and Delete) all follow the day you picked.
 
 Logging while you are looking at a past day uses that date and the current time of day. The chosen day is not saved: reopening Cadence, or switching profiles, returns to today. A locked profile still stays behind the PIN. The calendar only shows the person who is unlocked.
 
-Trend charts sit at the bottom of Today, not in a fifth tab. Four tabs already fill a phone. Each chart is calories, protein, carbs, or fat for this profile, up to the same 60 logged days as the Food list. The dashed line is that profile's goal. Days with no food are left out of the line, not drawn as zero, and a gap in the line means the logged days were not next to each other. Tap or hover a point to read that day. The charts redraw when you switch profiles or log food.
+The Food list uses the same 365-day window (the older 60-day cap is gone). It draws the newest two weeks first. **Show older days**, or scrolling that button into view, loads the next month of days so a full year does not render at once.
+
+Trend charts sit at the bottom of Today, not in a fifth tab. Four tabs already fill a phone. Each chart is calories, protein, carbs, or fat for this profile. The data window is the past 365 days. Chips pick **30d**, **90d** (the default, which stays readable on a phone), or **1y**. Axis labels are months, not every day. The dashed line is that profile's goal. Days with no food are left out of the line, not drawn as zero, and a gap in the line means the logged days were not next to each other. Tap or hover a point to read that day. The charts redraw when you switch profiles, change the range, or log food.
 
 ## Profiles
 
