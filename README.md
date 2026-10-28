@@ -1,6 +1,6 @@
 # Cadence v1
 
-Cadence is a private food, macro and weight tracker. It's plain HTML, CSS and JavaScript, with no build step, no CDN and no account. All your data stays in your browser.
+Cadence is a private food, macro and weight tracker. It's plain HTML, CSS and JavaScript, with no build step. With sync off, there is no account and the log stays in this browser. Sync is optional and loads Firebase only after you turn it on.
 
 ## Open it
 
@@ -43,11 +43,11 @@ The header shows who is logging: a small avatar and name. Tap it to switch, add,
 
 Food logs, daily goals (calories, protein, carbs, fat, and goal weight), and weigh-ins belong to the active profile. Today, Food, Weight, and Goals show only that person's numbers. Recipes and saved web lookups are a shared household library. Logging a serving writes into the active profile's food log. The USDA API key and the online-lookup switch stay global.
 
-An older `cadence.v1` save is copied into Joseph's profile the first time a profiles build loads. Nothing is dropped. The `cadence.v1` key is left in place as a backup. The working copy is now `cadence.v4`: `{ version, activeProfileId, profiles: [{ id, name, color, age, sex, foods, weights, goals, lock }], recipes, webFoods, settings }`. Older `cadence.v3`, `cadence.v2`, and `cadence.v1` saves are migrated forward and those keys are kept. Food entries gain a `micros` object when they are logged; older entries are left as they were.
+An older `cadence.v1` save is copied into Joseph's profile the first time a profiles build loads. Nothing is dropped. The `cadence.v1` key is left in place as a backup. The working copy is now `cadence.v5`: `{ version, activeProfileId, profiles: [{ id, name, color, age, sex, foods, weights, goals, lock, updatedAt, tombstones }], recipes, webFoods, profileTombstones, recipeTombstones, webTombstones, settings }`. Older `cadence.v4`, `cadence.v3`, `cadence.v2`, and `cadence.v1` saves are migrated forward and those keys are kept. Food entries gain a `micros` object when they are logged; older entries are left as they were. Each entry also keeps `updatedAt` so two devices can merge one entry at a time.
 
 Removing a profile asks first. Removing Joseph names the entries that would be deleted.
 
-Data is still **per device**. Cindy's log on Joseph's phone is not on Cindy's phone. Use Export / Import to move a copy. A full backup includes every profile. An older v1 file imports into the profile that is open.
+Until sync is turned on, data stays **on this device**. Cindy's log on one phone is not on another phone. Use Export / Import to move a copy, or turn on Sync. A full backup includes every profile. An older v1 file imports into the profile that is open. Export does not include the sync passphrase or the device's sync key.
 
 ## Profile PIN
 
@@ -148,10 +148,54 @@ The folder is ready to deploy as-is. Paths are relative, so it works at a domain
   For the voice button, use Cadence in a normal Safari tab, or use keyboard dictation in the Home Screen app.
 - **Android (Chrome):** open the URL › **⋮ menu** › **Install app** (or **Add to Home screen**).
 
-Data saved in the installed app lives on that phone. Use Export/Import to move it.
+Data saved in the installed app lives on that phone until Sync is turned on. Use Export/Import to move a copy by hand.
 
 ### Updating
 After you change any file, bump `VERSION` in `sw.js` so installed copies download the new version.
+
+## Sync across devices
+
+Sync is off by default. The app behaves as it does today until Joseph turns it on from **Goals → Sync**. Firebase is the free Spark plan: Firestore plus Google sign-in. A free Supabase project pauses after a week of inactivity, so Cadence does not use Supabase. The Firebase SDK is loaded from Google's CDN only after sync is turned on. There is still no build step.
+
+The server stores ciphertext only. The browser encrypts every profile, the recipe list, and the saved web lookups with AES-GCM before upload. The key is a random key wrapped by PBKDF2-SHA-256 (600,000 iterations) derived from a household sync passphrase. The passphrase is never uploaded. A verifier stored next to the wrapped key rejects a wrong passphrase. TLS covers the connection, and Google encrypts Firestore at rest as well. Cindy's profile is sealed again with her PIN key, so signing into the household Google account does not open her log.
+
+Cadence syncs on launch, about a second after each change, and when the browser fires `online`. Offline edits stay on the device and count as pending. Entries merge by stable id and `updatedAt`: the newer write wins for that entry, and a delete is a tombstone so it is not put back by the other device. Turning sync on for the first time on a second device merges the two logs. It does not replace one with the other. The same day can be edited on the phone and the computer without one log erasing the other.
+
+The Sync card shows sign-in, passphrase setup, the last synced time, the pending count, errors, **Sync now**, and **Turn off sync and delete cloud copy** (it asks first). Sign out leaves the cloud copy in place. Turning sync off deletes that account's Firestore documents and forgets the key on this device. The local log stays.
+
+If the passphrase is lost, a new device cannot decrypt the cloud copy. The log already on a device that unlocked sync is unaffected. The service worker never caches Firebase or Google API calls.
+
+### What Joseph has to click
+
+1. Open [console.firebase.google.com](https://console.firebase.google.com/) and sign in with the Google account that will own the household.
+2. Click **Create a project** (it may say **Add project**). Name it `Cadence`. Click **Continue**.
+3. Turn **off** Google Analytics. It is not used. Click **Create project**, wait, then **Continue**.
+4. Stay on the free **Spark** plan. Do not upgrade to Blaze.
+5. On the project overview, click the **Web** icon (`</>`).
+6. App nickname: `Cadence`. Leave Firebase Hosting unchecked. Click **Register app**.
+7. Copy the `firebaseConfig` values. You can skip the SDK snippet pages with **Continue** / **Continue to console**. Cadence loads the SDK itself.
+8. In this repo, open `js/sync-config.js` and replace every `PASTE_...` value with `apiKey`, `authDomain`, `projectId`, `appId`, and, if the console showed them, `messagingSenderId` and `storageBucket`. Do not put the passphrase in that file.
+9. In the left nav, open **Build → Authentication** and click **Get started**.
+10. Open the **Sign-in method** tab, click **Google**, switch **Enable** on, choose a support email, and click **Save**.
+11. Open **Authentication → Settings → Authorized domains**. `localhost` is already there. Click **Add domain**, type `jcollis33-creator.github.io` with no `https://` and no path, and save.
+12. In the left nav, open **Build → Firestore Database** and click **Create database**.
+13. Start in **production mode** so the database is closed until the rules below are deployed. Pick a region close to home (it cannot be changed later) and click **Enable**.
+14. From the Cadence folder on a computer, deploy `firestore.rules` (this repo's `firebase.json` already points at that file):
+    ```
+    npx firebase-tools@latest login
+    npx firebase-tools@latest use --add
+    npx firebase-tools@latest deploy --only firestore:rules
+    ```
+    Choose the Cadence project when asked. The rules allow a signed-in user to read and write only `users/{their uid}/...`. Nothing is publicly readable.
+15. Commit `js/sync-config.js` and push to `main` so GitHub Pages serves the config. The web apiKey is not a secret; the rules and Google sign-in are what close the data. The passphrase and the food log are not in that file.
+16. On each device, open Cadence → **Goals** → **Sync** → **Turn on sync** → **Sign in with Google**. On the first device, set the household passphrase and confirm it. On the next device, type the same passphrase. Cadence warns that losing it makes the cloud copy unreadable.
+
+Cloud documents:
+
+- `users/{uid}/profiles/{profileId}` — one encrypted document per profile. A removed profile is left as an encrypted tombstone.
+- `users/{uid}/shared/recipes` — encrypted recipe list and recipe tombstones.
+- `users/{uid}/shared/webFoods` — encrypted saved lookups and their tombstones.
+- `users/{uid}/shared/key` — PBKDF2 salt, iteration count, wrapped key, and verifier. Not the passphrase.
 
 ## Files
 
@@ -161,9 +205,13 @@ css/app.css            styles (paper #F3F1EC, ink #1C1B19, forest #1F5C45)
 js/foods.js            built-in food list (~240 foods)
 js/parser.js           phrase parser, food/recipe matching, USDA lookup
 js/lock.js             PIN key wrapping (PBKDF2) and AES-GCM sealing
+js/sync-config.js      Firebase web config placeholders (no passphrase, no logs)
+js/sync.js             passphrase key, entry merge, offline queue, Firebase loader
 js/app.js              UI, profiles, storage, charts, recipes, export/import
+firestore.rules        Firestore rules: only the signed-in uid can read or write
+firebase.json          points the Firebase CLI at firestore.rules
 manifest.webmanifest   PWA manifest
-sw.js                  service worker (offline app shell cache)
+sw.js                  service worker (offline app shell; does not cache Firebase)
 icons/                 app icons (192, 512, maskable 512, apple-touch 180, favicon)
 tools/make_icons.py    regenerates the icons (Pillow)
 netlify.toml, .nojekyll  hosting helpers

@@ -40,6 +40,8 @@ main{max-width:720px;margin:0 auto;padding:4px 14px}
 .cal-jump{display:block;width:100%;margin-top:2px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font:inherit}
 .trend-range{margin:8px 0 10px}
 .food-more{padding:10px 14px}
+.sync-status{display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 10px}
+#sync-card label{margin-top:8px}
 .trend{margin:0 0 12px}
 .trend h3{font-size:.88rem;margin:0 0 2px;font-weight:650}
 .trend svg{width:100%;height:auto;display:block;touch-action:manipulation}

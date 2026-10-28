@@ -217,9 +217,14 @@
     <div class="hint ok" id="s-saved"></div>
   </form>
 
+  <section class="card" id="sync-card" aria-label="Sync">
+    <h2>Sync</h2>
+    <div id="sync-body"></div>
+  </section>
+
   <div class="card">
     <h2>Your data</h2>
-    <p class="hint">Food logs, goals and weights are kept separately for each profile. Recipes, saved food lookups, and the USDA key are shared. A PIN hides a locked profile on this device and encrypts that profile in this browser. It is not a password against someone with developer tools. Phones do not sync with each other. Export includes a locked profile only after its PIN.</p>
+    <p class="hint">Food logs, goals and weights are kept separately for each profile. Recipes, saved food lookups, and the USDA key are shared. A PIN hides a locked profile on this device and encrypts that profile in this browser. It is not a password against someone with developer tools. Sync is off until you turn it on in the Sync card. Export includes a locked profile only after its PIN.</p>
     <div class="row wrap">
       <button class="btn" type="button" id="d-export">Export JSON</button>
       <button class="btn ghost" type="button" id="d-import">Import JSON</button>
@@ -274,6 +279,8 @@
 <script src="js/foods.js"></script>
 <script src="js/parser.js"></script>
 <script src="js/lock.js"></script>
+<script src="js/sync-config.js"></script>
+<script src="js/sync.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

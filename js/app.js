@@ -1,9 +1,11 @@
 /* Cadence app logic. Plain JS, no dependencies.
- * Profiles live in localStorage key cadence.v4. cadence.v3, cadence.v2 and cadence.v1 are kept as backups. */
+ * Profiles live in localStorage key cadence.v5. cadence.v4, cadence.v3, cadence.v2 and cadence.v1 are kept as backups.
+ * Sync is off until it is turned on from Goals. */
 (function () {
 "use strict";
 var P = window.CadenceParser, FOODS = window.CADENCE_FOODS, INDEX = P.buildIndex(FOODS);
-var KEY = "cadence.v4";
+var KEY = "cadence.v5";
+var KEY_V4 = "cadence.v4";
 var KEY_V3 = "cadence.v3";
 var KEY_V2 = "cadence.v2";
 var KEY_V1 = "cadence.v1";
@@ -41,7 +43,7 @@ function copyFoods(list) {
 function copyWeights(list) {
   if (!Array.isArray(list)) return [];
   return list.filter(function (w) { return w && w.date && +w.lb > 0; }).map(function (w) {
-    return { id: w.id || uid(), date: String(w.date).slice(0, 10), lb: +w.lb };
+    return { id: w.id || uid(), date: String(w.date).slice(0, 10), lb: +w.lb, updatedAt: w.updatedAt || null };
   });
 }
 function copyAge(v) {
@@ -70,7 +72,7 @@ function makeProfile(id, name, color, extra) {
 }
 function blankV2() {
   return {
-    version: 4,
+    version: 5,
     activeProfileId: "joseph",
     profiles: [
       makeProfile("joseph", "Joseph", "#1F5C45"),
@@ -79,8 +81,20 @@ function blankV2() {
     ],
     recipes: [],
     webFoods: [],
+    profileTombstones: [],
+    recipeTombstones: [],
+    webTombstones: [],
     settings: copySettings(null)
   };
+}
+function copyTombstones(list, field) {
+  field = field || "id";
+  if (!Array.isArray(list)) return [];
+  return list.filter(function (t) { return t && t.deleted && t[field]; }).map(function (t) {
+    var o = { updatedAt: String(t.updatedAt || ""), deleted: true };
+    o[field] = String(t[field]);
+    return o;
+  });
 }
 function copyMicros(m) {
   var o = {};
@@ -109,7 +123,8 @@ function copyWebFoods(list) {
       p: w.p == null || w.p === "" || isNaN(+w.p) ? null : +w.p,
       c: w.c == null || w.c === "" || isNaN(+w.c) ? null : +w.c,
       f: w.f == null || w.f === "" || isNaN(+w.f) ? null : +w.f,
-      micros: copyMicros(w.micros), per100: per, lastVerified: String(w.lastVerified || "").slice(0, 10)
+      micros: copyMicros(w.micros), per100: per, lastVerified: String(w.lastVerified || "").slice(0, 10),
+      updatedAt: w.updatedAt || null
     };
   });
 }
@@ -145,7 +160,11 @@ function profileFromStored(p, i) {
     id: id, name: name, color: color, age: age, sex: sex, lock: lock,
     foods: sealedOn ? [] : copyFoods(p.foods),
     weights: sealedOn ? [] : copyWeights(p.weights),
-    goals: sealedOn ? copyGoals(null) : copyGoals(p.goals)
+    goals: sealedOn ? copyGoals(null) : copyGoals(p.goals),
+    updatedAt: p.updatedAt || null,
+    contentUpdatedAt: p.contentUpdatedAt || null,
+    tombstones: sealedOn ? [] : copyTombstones(p.tombstones),
+    weightTombstones: sealedOn ? [] : copyTombstones(p.weightTombstones)
   };
 }
 function sanitizeV2(d) {
@@ -160,13 +179,20 @@ function sanitizeV2(d) {
   if (!profiles.length) return blankV2();
   var active = profiles.some(function (p) { return p.id === d.activeProfileId; }) ? d.activeProfileId : profiles[0].id;
   return {
-    version: 4,
+    version: 5,
     activeProfileId: active,
     profiles: profiles,
     recipes: rederiveRecipes(Array.isArray(d.recipes) ? d.recipes : []),
     webFoods: copyWebFoods(d.webFoods),
+    profileTombstones: copyTombstones(d.profileTombstones),
+    recipeTombstones: copyTombstones(d.recipeTombstones),
+    webTombstones: copyTombstones(d.webTombstones, "key"),
     settings: copySettings(d.settings)
   };
+}
+function finishLoad(s) {
+  if (window.CadenceSync) window.CadenceSync.ensureStamps(s);
+  return s;
 }
 function rederiveRecipes(list) {
   if (!Array.isArray(list)) return [];
@@ -202,12 +228,21 @@ function migrateV1(d) {
 }
 function toStored(s) {
   return {
-    version: 4,
+    version: 5,
     activeProfileId: s.activeProfileId,
     webFoods: s.webFoods || [],
+    profileTombstones: s.profileTombstones || [],
+    recipeTombstones: s.recipeTombstones || [],
+    webTombstones: s.webTombstones || [],
     profiles: s.profiles.map(function (p) {
-      if (p.lock && p.lock.enabled && !p.lock.pending) return { id: p.id, name: p.name, color: p.color, lock: p.lock };
-      var o = { id: p.id, name: p.name, color: p.color, age: p.age, sex: p.sex, foods: p.foods, weights: p.weights, goals: p.goals };
+      if (p.lock && p.lock.enabled && !p.lock.pending) {
+        return { id: p.id, name: p.name, color: p.color, lock: p.lock, updatedAt: p.updatedAt || null, contentUpdatedAt: p.contentUpdatedAt || null };
+      }
+      var o = {
+        id: p.id, name: p.name, color: p.color, age: p.age, sex: p.sex, foods: p.foods, weights: p.weights, goals: p.goals,
+        updatedAt: p.updatedAt || null, contentUpdatedAt: p.contentUpdatedAt || null,
+        tombstones: p.tombstones || [], weightTombstones: p.weightTombstones || []
+      };
       if (p.lock) o.lock = p.lock;
       return o;
     }),
@@ -224,22 +259,11 @@ function readJSON(key) {
 }
 function load() {
   var parsed = readJSON(KEY);
-  if (parsed && typeof parsed === "object") return sanitizeV2(parsed);
-  var v3 = readJSON(KEY_V3);
-  if (v3 && typeof v3 === "object") {
-    var fromV3 = sanitizeV2(v3);
-    try { localStorage.setItem(KEY, JSON.stringify(toStored(fromV3))); } catch (e1) {}
-    return fromV3;
-  }
-  var older = readJSON(KEY_V2);
-  if (older && typeof older === "object") {
-    var migrated = sanitizeV2(older);
-    try { localStorage.setItem(KEY, JSON.stringify(toStored(migrated))); } catch (e2) {}
-    return migrated;
-  }
-  var v1 = readJSON(KEY_V1);
-  var s = (v1 && typeof v1 === "object") ? migrateV1(v1) : blankV2();
-  try { localStorage.setItem(KEY, JSON.stringify(toStored(s))); } catch (e3) {}
+  if (parsed && typeof parsed === "object") return finishLoad(sanitizeV2(parsed));
+  var older = readJSON(KEY_V4) || readJSON(KEY_V3) || readJSON(KEY_V2);
+  var s = older && typeof older === "object" ? sanitizeV2(older) : ((readJSON(KEY_V1) && typeof readJSON(KEY_V1) === "object") ? migrateV1(readJSON(KEY_V1)) : blankV2());
+  s = finishLoad(s);
+  try { localStorage.setItem(KEY, JSON.stringify(toStored(s))); } catch (e1) {}
   return s;
 }
 var state = load();
@@ -279,6 +303,9 @@ function snapshot() {
     activeProfileId: state.activeProfileId,
     recipes: JSON.parse(JSON.stringify(state.recipes || [])),
     webFoods: JSON.parse(JSON.stringify(state.webFoods || [])),
+    profileTombstones: JSON.parse(JSON.stringify(state.profileTombstones || [])),
+    recipeTombstones: JSON.parse(JSON.stringify(state.recipeTombstones || [])),
+    webTombstones: JSON.parse(JSON.stringify(state.webTombstones || [])),
     settings: JSON.parse(JSON.stringify(state.settings || {})),
     profiles: state.profiles.map(function (p) {
       return {
@@ -287,6 +314,10 @@ function snapshot() {
         foods: JSON.parse(JSON.stringify(p.foods || [])),
         weights: JSON.parse(JSON.stringify(p.weights || [])),
         goals: copyGoals(p.goals),
+        updatedAt: p.updatedAt || null,
+        contentUpdatedAt: p.contentUpdatedAt || null,
+        tombstones: JSON.parse(JSON.stringify(p.tombstones || [])),
+        weightTombstones: JSON.parse(JSON.stringify(p.weightTombstones || [])),
         lock: p.lock ? JSON.parse(JSON.stringify(p.lock)) : null,
         open: hasKey(p.id),
         key: hasKey(p.id) ? sessionKeys[p.id] : null
@@ -298,30 +329,57 @@ function writeSnap(snap) {
   return Promise.all(snap.profiles.map(function (p) {
     if (p.lock && p.lock.enabled && !p.lock.pending) {
       var task = (p.open && p.key)
-        ? window.CadenceLock.seal(p.key, { foods: p.foods, weights: p.weights, goals: p.goals, age: p.age, sex: p.sex })
+        ? window.CadenceLock.seal(p.key, { foods: p.foods, weights: p.weights, goals: p.goals, age: p.age, sex: p.sex, tombstones: p.tombstones || [], weightTombstones: p.weightTombstones || [] })
         : Promise.resolve(p.lock.sealed || null);
       return task.then(function (sealed) {
         var lock = JSON.parse(JSON.stringify(p.lock));
         if (sealed) lock.sealed = sealed;
         var live = profileById(p.id);
         if (live && live.lock && sealed) live.lock.sealed = sealed;
-        return { id: p.id, name: p.name, color: p.color, lock: lock };
+        return { id: p.id, name: p.name, color: p.color, lock: lock, updatedAt: p.updatedAt || null, contentUpdatedAt: p.contentUpdatedAt || null };
       });
     }
-    var o = { id: p.id, name: p.name, color: p.color, foods: p.foods, weights: p.weights, goals: p.goals };
+    var o = {
+      id: p.id, name: p.name, color: p.color, foods: p.foods, weights: p.weights, goals: p.goals,
+      updatedAt: p.updatedAt || null, contentUpdatedAt: p.contentUpdatedAt || null,
+      tombstones: p.tombstones || [], weightTombstones: p.weightTombstones || []
+    };
     if (p.lock) o.lock = p.lock;
     o.age = p.age; o.sex = p.sex;
     return o;
   })).then(function (profiles) {
     localStorage.setItem(KEY, JSON.stringify({
-      version: 4, activeProfileId: snap.activeProfileId, profiles: profiles, recipes: snap.recipes, webFoods: snap.webFoods, settings: snap.settings
+      version: 5, activeProfileId: snap.activeProfileId, profiles: profiles, recipes: snap.recipes, webFoods: snap.webFoods,
+      profileTombstones: snap.profileTombstones || [], recipeTombstones: snap.recipeTombstones || [], webTombstones: snap.webTombstones || [],
+      settings: snap.settings
     }));
   });
 }
+var stampBase = null;
+var applyingSync = false;
+function captureStampBase(next) {
+  if (!stampBase || !next) return next;
+  next.profiles = next.profiles.map(function (p) {
+    var live = profileById(p.id);
+    if (live && live.lock && live.lock.enabled && !live.lock.pending && !hasKey(live.id)) {
+      var old = (stampBase.profiles || []).filter(function (x) { return x.id === p.id; })[0];
+      if (old) return old;
+    }
+    return p;
+  });
+  return next;
+}
 function save() {
+  if (!applyingSync && window.CadenceSync) {
+    window.CadenceSync.stamp(state, stampBase, new Date().toISOString(), function (p) {
+      return p.lock && p.lock.enabled && !p.lock.pending && !hasKey(p.id);
+    });
+  }
+  if (window.CadenceSync) stampBase = captureStampBase(window.CadenceSync.capture(state));
   var snap = snapshot();
   var run = saveChain.then(function () { return writeSnap(snap); });
   saveChain = run.catch(function (e) { toast("Could not save: " + (e && e.message ? e.message : "storage is full or blocked")); });
+  run.then(function () { if (!applyingSync) noteSyncChange(); }, function () {});
   return run;
 }
 function lockProfile(id) {
@@ -342,6 +400,8 @@ function applyOpened(p, dek, data) {
   sessionKeys[p.id] = dek;
   p.foods = copyFoods(data && data.foods);
   p.weights = copyWeights(data && data.weights);
+  p.tombstones = copyTombstones(data && data.tombstones);
+  p.weightTombstones = copyTombstones(data && data.weightTombstones);
   p.goals = copyGoals(data && data.goals);
   var demo = defaultDemo(p.id);
   if (data && Object.prototype.hasOwnProperty.call(data, "age")) p.age = copyAge(data.age);
@@ -1496,6 +1556,7 @@ function importData(d) {
   var settings = d.settings ? copySettings(d.settings) : state.settings;
   if (!confirm("Import this older backup into " + prof.name + "'s profile? " + prof.name + "'s food log, weights and goals will be replaced (" + foods.length + " food entries, " + weights.length + " weigh-ins). Shared recipes (" + recipes.length + ") and settings will be replaced. Other profiles stay as they are.")) return;
   prof.foods = foods; prof.weights = weights; prof.goals = goals; state.recipes = recipes; state.settings = settings;
+  if (window.CadenceSync) stampBase = window.CadenceSync.capture(state);
   save(); fillGoals(); renderAll(); toast("Imported into " + prof.name);
 }
 function importV2(d) {
@@ -1518,6 +1579,7 @@ function importV2(d) {
     sessionKeys = {};
     state = incoming;
     session.viewId = canView(profileById(state.activeProfileId)) ? state.activeProfileId : fallbackProfileId();
+    if (window.CadenceSync) stampBase = window.CadenceSync.capture(state);
     save(); fillGoals(); renderAll(); toast("Imported backup");
   });
 }
@@ -1544,7 +1606,7 @@ function exportBackup() {
       if (p.lock && p.lock.enabled && !p.lock.pending) {
         if (!include[p.id]) return Promise.resolve(null);
         if (hasKey(p.id)) {
-          return window.CadenceLock.seal(sessionKeys[p.id], { foods: p.foods, weights: p.weights, goals: copyGoals(p.goals), age: p.age, sex: p.sex }).then(function (sealed) {
+          return window.CadenceLock.seal(sessionKeys[p.id], { foods: p.foods, weights: p.weights, goals: copyGoals(p.goals), age: p.age, sex: p.sex, tombstones: p.tombstones || [], weightTombstones: p.weightTombstones || [] }).then(function (sealed) {
             var lock = JSON.parse(JSON.stringify(p.lock));
             lock.sealed = sealed;
             return { id: p.id, name: p.name, color: p.color, lock: lock };
@@ -1552,14 +1614,16 @@ function exportBackup() {
         }
         return Promise.resolve({ id: p.id, name: p.name, color: p.color, lock: JSON.parse(JSON.stringify(p.lock)) });
       }
-      var o = { id: p.id, name: p.name, color: p.color, age: p.age, sex: p.sex, foods: p.foods, weights: p.weights, goals: p.goals };
+      var o = { id: p.id, name: p.name, color: p.color, age: p.age, sex: p.sex, foods: p.foods, weights: p.weights, goals: p.goals, updatedAt: p.updatedAt || null, contentUpdatedAt: p.contentUpdatedAt || null, tombstones: p.tombstones || [], weightTombstones: p.weightTombstones || [] };
       if (p.lock) o.lock = JSON.parse(JSON.stringify(p.lock));
       return Promise.resolve(o);
     });
     return Promise.all(tasks).then(function (rows) {
       var data = {
-        exportedAt: new Date().toISOString(), app: "Cadence", version: 4,
-        activeProfileId: state.activeProfileId, profiles: rows.filter(Boolean), recipes: state.recipes, webFoods: state.webFoods, settings: state.settings
+        exportedAt: new Date().toISOString(), app: "Cadence", version: 5,
+        activeProfileId: state.activeProfileId, profiles: rows.filter(Boolean), recipes: state.recipes, webFoods: state.webFoods,
+        profileTombstones: state.profileTombstones || [], recipeTombstones: state.recipeTombstones || [], webTombstones: state.webTombstones || [],
+        settings: state.settings
       };
       if (skipped.length) data.omittedProfiles = skipped.map(function (name) {
         var p = state.profiles.filter(function (x) { return x.name === name; })[0];
@@ -1585,11 +1649,13 @@ $("#d-file").addEventListener("change", function () {
   rd.readAsText(file); this.value = "";
 });
 $("#d-clear").addEventListener("click", function () {
-  if (!confirm("Delete ALL Cadence data in this browser? Every profile's food log, weights and goals, plus shared recipes and saved food lookups, will be erased. Joseph, Cindy and Leo are reset. Cindy will need a new PIN. Export a backup first if you need it.")) return;
+  if (!confirm("Delete ALL Cadence data in this browser? Every profile's food log, weights and goals, plus shared recipes and saved food lookups, will be erased. Joseph, Cindy and Leo are reset. Cindy will need a new PIN. Sync turns off on this device. The cloud copy is not deleted. Export a backup first if you need it.")) return;
   sessionKeys = {};
+  forgetSyncLocal();
   state = blankV2();
   session.viewId = "joseph";
   state.activeProfileId = "joseph";
+  if (window.CadenceSync) stampBase = window.CadenceSync.capture(state);
   save(); fillGoals(); renderAll(); toast("All data cleared");
 });
 function renderInfo() {
@@ -2104,6 +2170,350 @@ gateDlg.addEventListener("keydown", function (e) {
   else if (e.key === "Backspace") { e.preventDefault(); popDigit(); }
 });
 
+/* ---------------- sync ---------------- */
+var DEVICE_KEY = "cadence.sync.device";
+var syncQueue = window.CadenceSync.createQueue();
+var syncDek = null;
+var syncTimer = null;
+var syncing = false;
+var fbLibs = null;
+var fbApp = null;
+var fbAuth = null;
+function readDevice() {
+  try {
+    var d = JSON.parse(localStorage.getItem(DEVICE_KEY) || "");
+    return d && typeof d === "object" ? d : {};
+  } catch (e) { return {}; }
+}
+function writeDevice(d) { localStorage.setItem(DEVICE_KEY, JSON.stringify(d)); }
+function syncDevice() {
+  var d = readDevice();
+  if (typeof d.enabled !== "boolean") d.enabled = false;
+  return d;
+}
+function forgetSyncLocal() {
+  syncDek = null;
+  if (syncTimer) clearTimeout(syncTimer);
+  syncQueue.clear();
+  try { localStorage.removeItem(DEVICE_KEY); } catch (e) {}
+  if (fbAuth && fbLibs) { try { fbLibs.auth.signOut(fbAuth); } catch (e2) {} }
+}
+function noteSyncChange() {
+  var d = syncDevice();
+  if (!d.enabled) return;
+  syncQueue.note();
+  d.pending = syncQueue.count();
+  writeDevice(d);
+  scheduleSync();
+  renderSync();
+}
+function scheduleSync() {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(function () { runSync(); }, 1200);
+}
+function householdModel() {
+  return {
+    profiles: state.profiles.map(function (p) {
+      var opaque = !!(p.lock && p.lock.enabled && !p.lock.pending && !hasKey(p.id));
+      return {
+        id: p.id, name: p.name, color: p.color, age: p.age, sex: p.sex, goals: copyGoals(p.goals),
+        lock: p.lock ? JSON.parse(JSON.stringify(p.lock)) : null,
+        updatedAt: p.updatedAt || null, contentUpdatedAt: p.contentUpdatedAt || null,
+        foods: opaque ? [] : JSON.parse(JSON.stringify(p.foods || [])),
+        weights: opaque ? [] : JSON.parse(JSON.stringify(p.weights || [])),
+        tombstones: opaque ? [] : JSON.parse(JSON.stringify(p.tombstones || [])),
+        weightTombstones: opaque ? [] : JSON.parse(JSON.stringify(p.weightTombstones || [])),
+        opaque: opaque
+      };
+    }),
+    profileTombstones: JSON.parse(JSON.stringify(state.profileTombstones || [])),
+    recipes: JSON.parse(JSON.stringify(state.recipes || [])),
+    recipeTombstones: JSON.parse(JSON.stringify(state.recipeTombstones || [])),
+    webFoods: JSON.parse(JSON.stringify(state.webFoods || [])),
+    webTombstones: JSON.parse(JSON.stringify(state.webTombstones || []))
+  };
+}
+function prepareRemote(remote) {
+  return Promise.all((remote.profiles || []).map(function (p) {
+    if (p.lock && p.lock.sealed && hasKey(p.id)) {
+      return window.CadenceLock.open(sessionKeys[p.id], p.lock.sealed).then(function (data) {
+        p.foods = copyFoods(data && data.foods);
+        p.weights = copyWeights(data && data.weights);
+        p.goals = copyGoals(data && data.goals);
+        if (data && Object.prototype.hasOwnProperty.call(data, "age")) p.age = copyAge(data.age);
+        if (data && Object.prototype.hasOwnProperty.call(data, "sex")) p.sex = copySex(data.sex);
+        p.tombstones = copyTombstones(data && data.tombstones);
+        p.weightTombstones = copyTombstones(data && data.weightTombstones);
+        p.opaque = false;
+        return p;
+      });
+    }
+    if (p.lock && p.lock.enabled && !p.lock.pending) p.opaque = true;
+    return p;
+  })).then(function () { return remote; });
+}
+function modelForPush(model) {
+  return Promise.all((model.profiles || []).map(function (p) {
+    if (p.lock && p.lock.enabled && !p.lock.pending && hasKey(p.id)) {
+      return window.CadenceLock.seal(sessionKeys[p.id], {
+        foods: p.foods, weights: p.weights, goals: p.goals, age: p.age, sex: p.sex,
+        tombstones: p.tombstones || [], weightTombstones: p.weightTombstones || []
+      }).then(function (sealed) {
+        var lock = JSON.parse(JSON.stringify(p.lock));
+        lock.sealed = sealed;
+        return { id: p.id, name: p.name, color: p.color, lock: lock, updatedAt: p.updatedAt, contentUpdatedAt: p.contentUpdatedAt, opaque: true };
+      });
+    }
+    if (p.opaque) {
+      return { id: p.id, name: p.name, color: p.color, lock: p.lock, updatedAt: p.updatedAt, contentUpdatedAt: p.contentUpdatedAt, age: p.age, sex: p.sex, goals: p.goals, opaque: true };
+    }
+    var copy = JSON.parse(JSON.stringify(p));
+    delete copy.opaque;
+    return copy;
+  })).then(function (profiles) {
+    return {
+      profiles: profiles,
+      profileTombstones: model.profileTombstones || [],
+      recipes: model.recipes || [],
+      recipeTombstones: model.recipeTombstones || [],
+      webFoods: model.webFoods || [],
+      webTombstones: model.webTombstones || []
+    };
+  });
+}
+function applyMerged(merged) {
+  applyingSync = true;
+  var seen = {};
+  (merged.profiles || []).forEach(function (p) {
+    seen[p.id] = 1;
+    var cur = profileById(p.id);
+    if (!cur) {
+      state.profiles.push(profileFromStored(p, state.profiles.length));
+      cur = profileById(p.id);
+    }
+    cur.name = p.name || cur.name;
+    cur.color = p.color || cur.color;
+    cur.updatedAt = p.updatedAt || cur.updatedAt;
+    cur.contentUpdatedAt = p.contentUpdatedAt || cur.contentUpdatedAt;
+    if (p.lock) cur.lock = p.lock;
+    if (p.opaque && !hasKey(cur.id)) return;
+    cur.age = p.age;
+    cur.sex = p.sex;
+    cur.goals = copyGoals(p.goals);
+    cur.foods = copyFoods(p.foods);
+    cur.weights = copyWeights(p.weights);
+    cur.tombstones = copyTombstones(p.tombstones);
+    cur.weightTombstones = copyTombstones(p.weightTombstones);
+  });
+  state.profiles = state.profiles.filter(function (p) { return seen[p.id]; });
+  state.profileTombstones = copyTombstones(merged.profileTombstones);
+  state.recipes = merged.recipes || [];
+  state.recipeTombstones = copyTombstones(merged.recipeTombstones);
+  state.webFoods = copyWebFoods(merged.webFoods);
+  state.webTombstones = copyTombstones(merged.webTombstones, "key");
+  if (!profileById(session.viewId) || !canView(profileById(session.viewId))) session.viewId = fallbackProfileId();
+  return save().then(function () { applyingSync = false; fillGoals(); renderAll(); }, function (e) { applyingSync = false; throw e; });
+}
+function ensureFirebase() {
+  var cfg = window.CADENCE_SYNC_CONFIG || {};
+  if (!window.CadenceSync.configReady(cfg)) return Promise.reject(new Error("config"));
+  return window.CadenceSync.loadFirebase().then(function (libs) {
+    fbLibs = libs;
+    if (!fbApp) fbApp = libs.app.initializeApp(cfg);
+    if (!fbAuth) fbAuth = libs.auth.getAuth(fbApp);
+    return libs;
+  });
+}
+function syncBackend() { return window.CadenceSync.createFirebaseBackend(fbLibs, fbApp); }
+function runSync() {
+  var d = syncDevice();
+  if (syncing || !d.enabled || !syncDek || !fbAuth || !fbAuth.currentUser) { renderSync(); return Promise.resolve(); }
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    d.lastError = "Offline. Changes stay on this device until it reconnects.";
+    d.pending = syncQueue.count();
+    writeDevice(d);
+    renderSync();
+    return Promise.resolve();
+  }
+  syncing = true;
+  renderSync();
+  var uid = fbAuth.currentUser.uid;
+  var backend = syncBackend();
+  return window.CadenceSync.pullHousehold(backend, syncDek, uid).then(prepareRemote).then(function (remote) {
+    var merged = window.CadenceSync.mergeHousehold(householdModel(), remote);
+    return modelForPush(merged).then(function (stored) {
+      return window.CadenceSync.pushHousehold(backend, syncDek, uid, stored).then(function () { return applyMerged(merged); });
+    });
+  }).then(function () {
+    syncQueue.clear();
+    var next = syncDevice();
+    next.lastSynced = new Date().toISOString();
+    next.lastError = "";
+    next.pending = 0;
+    next.uid = uid;
+    writeDevice(next);
+  }, function (e) {
+    var next = syncDevice();
+    next.lastError = (e && e.message) || "Sync failed";
+    next.pending = syncQueue.count();
+    writeDevice(next);
+  }).then(function () { syncing = false; renderSync(); });
+}
+function rememberDek(dek, record) {
+  return window.CadenceSync.exportDek(dek).then(function (raw) {
+    syncDek = dek;
+    var d = syncDevice();
+    d.enabled = true;
+    d.dekRaw = raw;
+    d.record = record;
+    d.pending = syncQueue.count();
+    if (fbAuth && fbAuth.currentUser) { d.uid = fbAuth.currentUser.uid; d.email = fbAuth.currentUser.email || ""; }
+    writeDevice(d);
+  });
+}
+function afterGoogle(user) {
+  var d = syncDevice();
+  d.enabled = true;
+  d.uid = user.uid;
+  d.email = user.email || "";
+  writeDevice(d);
+  return syncBackend().getDoc(window.CadenceSync.paths(user.uid).key).then(function (keyDoc) {
+    var next = syncDevice();
+    next.needPass = keyDoc && keyDoc.wrap ? "unlock" : "create";
+    if (keyDoc && keyDoc.wrap) next.record = keyDoc;
+    writeDevice(next);
+    renderSync();
+  });
+}
+function startGoogle() {
+  var d = syncDevice();
+  d.lastError = "";
+  writeDevice(d);
+  renderSync();
+  return ensureFirebase().then(function (libs) {
+    var provider = new libs.auth.GoogleAuthProvider();
+    return libs.auth.signInWithPopup(fbAuth, provider);
+  }).then(function (cred) { return afterGoogle(cred.user); }).catch(function (e) {
+    if (e && e.message === "config") return;
+    var next = syncDevice();
+    next.lastError = (e && e.message) || "Google sign-in failed";
+    writeDevice(next);
+    renderSync();
+  });
+}
+function submitPassphrase(pass, confirmPass) {
+  var d = syncDevice();
+  var creating = d.needPass === "create";
+  if (creating && pass !== confirmPass) { d.lastError = "The two passphrases don't match."; writeDevice(d); renderSync(); return; }
+  d.lastError = "";
+  d.busy = true;
+  writeDevice(d);
+  renderSync();
+  var done = creating
+    ? window.CadenceSync.setupPassphrase(pass).then(function (made) {
+      return rememberDek(made.dek, made.record).then(function () {
+        return syncBackend().setDoc(window.CadenceSync.paths(fbAuth.currentUser.uid).key, made.record);
+      });
+    })
+    : window.CadenceSync.unlockPassphrase(d.record, pass).then(function (dek) { return rememberDek(dek, d.record); });
+  done.then(function () {
+    var next = syncDevice();
+    next.needPass = "";
+    next.busy = false;
+    next.lastError = "";
+    writeDevice(next);
+    return runSync();
+  }).catch(function (e) {
+    var next = syncDevice();
+    next.busy = false;
+    next.lastError = (e && e.message) || "Could not unlock sync";
+    writeDevice(next);
+    renderSync();
+  });
+}
+function turnOffSync() {
+  if (!confirm("Turn off sync on this device and delete the encrypted cloud copy? The log on this device stays. Other devices will not receive new changes, and this cloud copy will be removed.")) return;
+  var d = syncDevice();
+  var uid = (fbAuth && fbAuth.currentUser && fbAuth.currentUser.uid) || d.uid;
+  var job = (uid && fbLibs && fbApp) ? window.CadenceSync.deleteCloud(syncBackend(), uid) : Promise.resolve();
+  job.then(function () { forgetSyncLocal(); renderSync(); toast("Sync is off. The cloud copy was deleted."); }, function (e) {
+    toast("Could not delete the cloud copy: " + ((e && e.message) || "try again online"));
+  });
+}
+function fmtSynced(iso) {
+  if (!iso) return "Not yet";
+  var t = new Date(iso);
+  if (isNaN(t.getTime())) return "Not yet";
+  return t.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function renderSync() {
+  var el = $("#sync-body");
+  if (!el) return;
+  var d = syncDevice();
+  var ready = window.CadenceSync.configReady(window.CADENCE_SYNC_CONFIG || {});
+  var html = "";
+  if (!d.enabled) {
+    html = '<p class="hint">Sync is off. This browser keeps its own copy, and nothing is sent until you turn sync on.</p>';
+    if (!ready) html += '<p class="hint">The Firebase project is not connected yet. Paste the config into <b>js/sync-config.js</b>. The README has the click-by-click steps.</p>';
+    html += '<button type="button" class="btn" id="sync-on">Turn on sync</button>';
+  } else if (!ready) {
+    html = '<p class="hint warn">Sync was turned on, but js/sync-config.js still has placeholders. Paste the Firebase config, then reload.</p>';
+  } else if (!fbAuth || !fbAuth.currentUser) {
+    html = '<p class="hint">Sign in with Google to reach this household\'s encrypted copy. The Google account is not the sync passphrase.</p>' +
+      (d.email ? '<p class="hint">Last signed in as ' + esc(d.email) + '.</p>' : "") +
+      '<div class="row wrap"><button type="button" class="btn" id="sync-google">Sign in with Google</button><button type="button" class="btn ghost" id="sync-off">Turn off sync and delete cloud copy</button></div>';
+  } else if (d.needPass === "create" || d.needPass === "unlock") {
+    html = '<p class="hint warn">If you lose this passphrase, the cloud copy cannot be decrypted. The log on this device is not affected. The passphrase is never uploaded.</p>' +
+      '<p class="hint">Cindy\'s profile stays sealed with her PIN. Signing into the household account does not open her log.</p>' +
+      '<label>Household sync passphrase<input id="sync-pass" type="password" autocomplete="new-password" minlength="8"></label>' +
+      (d.needPass === "create" ? '<label>Confirm passphrase<input id="sync-pass2" type="password" autocomplete="new-password" minlength="8"></label>' : "") +
+      '<div class="row wrap"><button type="button" class="btn" id="sync-pass-save">' + (d.busy ? "Checking…" : (d.needPass === "create" ? "Set passphrase" : "Unlock sync")) + '</button></div>';
+  } else {
+    html = '<div class="sync-status"><span>Signed in as <b>' + esc((fbAuth.currentUser && fbAuth.currentUser.email) || d.email || "Google") + '</b></span>' +
+      '<span>Last synced <b>' + esc(fmtSynced(d.lastSynced)) + '</b></span>' +
+      '<span>Pending <b>' + syncQueue.count() + '</b></span></div>' +
+      (syncing ? '<p class="hint">Syncing…</p>' : "") +
+      '<div class="row wrap"><button type="button" class="btn" id="sync-now">Sync now</button><button type="button" class="btn ghost" id="sync-signout">Sign out</button><button type="button" class="btn danger" id="sync-off">Turn off sync and delete cloud copy</button></div>';
+  }
+  if (d.lastError) html += '<p class="hint warn">' + esc(d.lastError) + '</p>';
+  el.innerHTML = html;
+}
+function bootSync() {
+  var d = syncDevice();
+  syncQueue.set(d.pending || 0);
+  stampBase = window.CadenceSync.capture(state);
+  renderSync();
+  window.addEventListener("online", function () { if (syncDevice().enabled && syncDek) runSync(); });
+  if (!d.enabled || !d.dekRaw || !window.CadenceSync.configReady(window.CADENCE_SYNC_CONFIG || {})) return;
+  window.CadenceSync.importDek(d.dekRaw).then(function (dek) {
+    syncDek = dek;
+    return ensureFirebase();
+  }).then(function (libs) {
+    libs.auth.onAuthStateChanged(fbAuth, function (user) {
+      if (user && syncDek && syncDevice().enabled) runSync();
+      else renderSync();
+    });
+  }).catch(function (e) {
+    var next = syncDevice();
+    next.lastError = (e && e.message) || "Could not start sync";
+    writeDevice(next);
+    renderSync();
+  });
+}
+$("#sync-card").addEventListener("click", function (ev) {
+  var b = ev.target.closest("button");
+  if (!b) return;
+  if (b.id === "sync-on" || b.id === "sync-google") {
+    if (!window.CadenceSync.configReady(window.CADENCE_SYNC_CONFIG || {})) { renderSync(); return; }
+    startGoogle();
+  } else if (b.id === "sync-pass-save") {
+    submitPassphrase($("#sync-pass").value, $("#sync-pass2") ? $("#sync-pass2").value : "");
+  } else if (b.id === "sync-now") runSync();
+  else if (b.id === "sync-signout") {
+    if (fbAuth && fbLibs) fbLibs.auth.signOut(fbAuth).then(function () { renderSync(); });
+  } else if (b.id === "sync-off") turnOffSync();
+});
+
 /* ---------------- boot ---------------- */
 function renderAll() {
   if (!canView(profileById(session.viewId))) session.viewId = fallbackProfileId();
@@ -2114,6 +2524,7 @@ function renderAll() {
   renderRecipeList();
   renderLockSettings();
   renderInfo();
+  renderSync();
 }
 var idleTimer = null, hiddenAt = 0;
 function lockFromIdle() {
@@ -2152,6 +2563,7 @@ document.addEventListener("visibilitychange", function () {
 armIdle();
 $("#w-date").value = todayKey();
 resetWhen();
+bootSync();
 fillGoals();
 showTab((location.hash || "#today").slice(1));
 window.addEventListener("hashchange", function () { showTab(location.hash.slice(1)); });
@@ -2159,6 +2571,7 @@ window.addEventListener("storage", function (e) {
   if (e.key !== KEY && e.key !== null) return;
   sessionKeys = {};
   state = load();
+  if (window.CadenceSync) stampBase = window.CadenceSync.capture(state);
   if (!canView(profileById(session.viewId))) session.viewId = fallbackProfileId();
   fillGoals();
   renderAll();

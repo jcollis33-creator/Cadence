@@ -1,8 +1,8 @@
 /* Cadence service worker: caches the app shell for offline use.
  * Bump VERSION whenever any shell file changes so phones pick up the update. */
-var VERSION = "5.1.0";
+var VERSION = "6.0.0";
 var CACHE = "cadence-shell-v" + VERSION;
-var SHELL = ["./", "index.html", "css/app.css", "js/foods.js", "js/parser.js", "js/lock.js", "js/app.js", "manifest.webmanifest",
+var SHELL = ["./", "index.html", "css/app.css", "js/foods.js", "js/parser.js", "js/lock.js", "js/sync-config.js", "js/sync.js", "js/app.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png"];
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
@@ -14,6 +14,8 @@ self.addEventListener("activate", function (e) {
 });
 self.addEventListener("fetch", function (e) {
   var req = e.request, url = new URL(req.url);
+  // Firebase Auth, Firestore, and the modular SDK stay on the network. Never cache them.
+  if (/firebase|googleapis|gstatic|identitytoolkit|securetoken|firestore/.test(url.hostname)) return;
   if (req.method !== "GET" || url.origin !== self.location.origin) return; // USDA lookups go straight to network
   if (req.mode === "navigate") {
     // network first for the page so updates show up, cached copy when offline
