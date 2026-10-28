@@ -35,7 +35,20 @@
 <main>
 <!-- TODAY -->
 <section id="view-today" class="view active" aria-label="Today">
-  <h1 class="date" id="today-date"></h1>
+  <div class="daynav" id="day-nav">
+    <button type="button" class="navbtn" id="day-prev" aria-label="Previous day">&#8249;</button>
+    <button type="button" class="day-label" id="day-label" aria-haspopup="dialog" aria-expanded="false" aria-controls="cal"><span id="today-date"></span></button>
+    <button type="button" class="navbtn" id="day-next" aria-label="Next day">&#8250;</button>
+    <button type="button" class="btn small" id="day-today" hidden>Today</button>
+  </div>
+  <div class="cal" id="cal" hidden role="dialog" aria-label="Choose a day">
+    <div class="cal-head">
+      <button type="button" class="navbtn" id="cal-prev" aria-label="Previous month">&#8249;</button>
+      <b id="cal-title"></b>
+      <button type="button" class="navbtn" id="cal-next" aria-label="Next month">&#8250;</button>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
   <p class="today-who" id="today-who"></p>
   <div class="card ringcard">
     <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
@@ -55,7 +68,7 @@
   <div class="card" id="macro-bars"></div>
   <div class="card" id="nutrient-panel" hidden></div>
   <div class="card">
-    <div class="card-head"><h2>Today's food</h2><button class="link" data-goto="food">+ Log food</button></div>
+    <div class="card-head"><h2 id="today-food-h">Today's food</h2><button class="link" data-goto="food">+ Log food</button></div>
     <ul class="entries" id="today-entries"></ul>
   </div>
   <div class="card">
@@ -65,6 +78,12 @@
       <div class="spark" id="w-spark"></div>
     </div>
   </div>
+  <section class="card" id="trends" aria-label="Trends">
+    <h2>Trends</h2>
+    <p class="hint">Daily totals on days with food logged, up to 60 days. Days with nothing logged are left out, not shown as zero. The dashed line is this profile's goal.</p>
+    <div id="trend-charts"></div>
+    <p class="hint" id="trend-tip" hidden></p>
+  </section>
 </section>
 
 <!-- FOOD -->

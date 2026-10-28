@@ -14,7 +14,7 @@ Cadence is a private food, macro and weight tracker. It's plain HTML, CSS and Ja
 
 ## Tabs
 
-- **Today:** calorie ring and protein/carb/fat bars against your goals, today's entries, and your latest weight with a mini trend.
+- **Today:** calorie ring and protein/carb/fat bars against your goals, that day's entries, and your latest weight with a mini trend. Arrows and a calendar move to another day. Trend charts for calories and macros sit at the bottom. See **Days and trends**.
 - **Food › Log:** type or speak what you ate, e.g. "two eggs and toast" or "8 oz salmon, 1 cup rice and broccoli". A live preview shows how the text was read. Then tap **Log it**.
   - Entries keep their date and time, and the time can be changed before logging.
   - Tap **Edit** on any entry to change the time, re-read the text, or change any item's macros by hand. **Delete** removes the entry.
@@ -26,6 +26,14 @@ Cadence is a private food, macro and weight tracker. It's plain HTML, CSS and Ja
 - **Weight:** pick a date (it defaults to today) and enter a weight in lb. Adding a weight for a date that already has one replaces it.
   - The line chart shows a dashed line at your goal weight, and there are stats for latest weight, change, and pounds to goal.
 - **Goals:** daily calories and P/C/F (defaults 2200 / 180 / 220 / 70) and goal weight (default 180 lb). Also here: the online lookup toggle, your USDA API key, and Export / Import / Clear.
+
+## Days and trends
+
+Today opens on the current day. The header has back and forward arrows (forward stops at today), the date, and a **Today** button when you are looking at another day. Tap the date for a month calendar. Days that already have food get a dot. Future days are disabled. Swipe left or right on the page to move a day. The ring, macro and nutrient bars, and the entry list (with Edit and Delete) all follow the day you picked.
+
+Logging while you are looking at a past day uses that date and the current time of day. The chosen day is not saved: reopening Cadence, or switching profiles, returns to today. A locked profile still stays behind the PIN. The calendar only shows the person who is unlocked.
+
+Trend charts sit at the bottom of Today, not in a fifth tab. Four tabs already fill a phone. Each chart is calories, protein, carbs, or fat for this profile, up to the same 60 logged days as the Food list. The dashed line is that profile's goal. Days with no food are left out of the line, not drawn as zero, and a gap in the line means the logged days were not next to each other. Tap or hover a point to read that day. The charts redraw when you switch profiles or log food.
 
 ## Profiles
 

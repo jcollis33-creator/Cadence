@@ -515,7 +515,10 @@ function renderPreview() {
   }).join("");
 }
 foodInput.addEventListener("input", function () { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 150); });
-function resetWhen() { $("#food-when").value = toLocalInput(new Date()); }
+function resetWhen() {
+  var now = new Date(), day = viewDay && viewDay <= todayKey() ? viewDay : todayKey();
+  $("#food-when").value = day + "T" + pad(now.getHours()) + ":" + pad(now.getMinutes());
+}
 
 function commitLog(pid, text, when, items, error) {
   var dest = profileById(pid);
@@ -627,8 +630,8 @@ function verifiedHTML(i) {
 }
 function entryHTML(e, compact) {
   var t = entryTotals(e);
-  if (compact) return '<li><div><div class="t">' + esc(e.text) + '</div><div class="m">' + fmtTime(e.ts) + " \u00b7 P " + n0(t.p) + " C " + n0(t.c) + " F " + n0(t.f) +
-    e.items.map(verifiedHTML).join("") + '</div></div><div class="k">' + kcalText(t.kcal) + " kcal</div></li>";
+  if (compact) return '<li class="tentry" data-id="' + e.id + '"><div class="top"><div><div class="t">' + esc(e.text) + '</div><div class="m">' + fmtTime(e.ts) + " \u00b7 P " + n0(t.p) + " C " + n0(t.c) + " F " + n0(t.f) +
+    e.items.map(verifiedHTML).join("") + '</div></div><div class="k">' + kcalText(t.kcal) + " kcal</div></div><div class=\"acts\"><button type=\"button\" data-act=\"edit\">Edit</button><button type=\"button\" data-act=\"del\" class=\"del\">Delete</button></div></li>";
   return '<div class="entry" data-id="' + e.id + '"><div class="top"><div><div class="t"><b>' + esc(e.text) + '</b></div><div class="when">' + fmtTime(e.ts) + '</div></div><div class="k"><b>' + kcalText(t.kcal) + ' kcal</b><div class="macros">P ' + n1(t.p) + " \u00b7 C " + n1(t.c) + " \u00b7 F " + n1(t.f) + "</div></div></div>" +
     '<ul class="items">' + e.items.map(function (i, idx) {
       var refresh = (i.source === "web" && i.webSource && i.webSource !== "manual") ? '<button type="button" data-act="refresh" data-idx="' + idx + '">Refresh</button>' : "";
@@ -1021,16 +1024,137 @@ function bar(label, val, goal, color, unit) {
   var pct = goal > 0 ? Math.min(100, val / goal * 100) : 0;
   return '<div class="bar"><div class="bar-top"><span><b>' + label + '</b></span><span>' + n0(val) + " / " + n0(goal) + " " + unit + '</span></div><div class="track"><div class="fill" style="width:' + pct.toFixed(1) + "%;background:" + (val > goal * 1.05 ? "var(--warn)" : color) + '"></div></div></div>';
 }
+var viewDay = null, viewFor = null, calMonth = null;
+function selectedDay() {
+  var id = current().id;
+  if (viewFor !== id) { viewFor = id; viewDay = todayKey(); calMonth = null; closeCal(); resetWhen(); }
+  if (!viewDay || viewDay > todayKey()) viewDay = todayKey();
+  return viewDay;
+}
+function addDays(key, n) {
+  var d = new Date(key + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return dayKey(d);
+}
+function setViewDay(key) {
+  if (!key || key > todayKey()) key = todayKey();
+  viewFor = current().id;
+  viewDay = key;
+  calMonth = key.slice(0, 7);
+  resetWhen();
+  renderToday();
+}
+function shiftDay(n) { setViewDay(addDays(selectedDay(), n)); }
+function loggedDays() {
+  var days = {};
+  current().foods.forEach(function (e) { days[dayKey(e.ts)] = 1; });
+  return days;
+}
+function renderCal() {
+  var key = selectedDay();
+  if (!calMonth) calMonth = key.slice(0, 7);
+  var year = +calMonth.slice(0, 4), month = +calMonth.slice(5, 7) - 1;
+  var first = new Date(year, month, 1), startDow = first.getDay();
+  var daysIn = new Date(year, month + 1, 0).getDate();
+  var logged = loggedDays(), today = todayKey();
+  var html = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(function (d) { return '<span class="dow">' + d + "</span>"; }).join("");
+  for (var i = 0; i < startDow; i++) html += "<span></span>";
+  for (var d = 1; d <= daysIn; d++) {
+    var k = year + "-" + pad(month + 1) + "-" + pad(d);
+    var cls = "cal-day" + (k === key ? " on" : "") + (k === today ? " today" : "") + (logged[k] ? " has" : "");
+    html += '<button type="button" class="' + cls + '" data-day="' + k + '"' + (k > today ? " disabled" : "") + ">" + d + (logged[k] ? "<i></i>" : "") + "</button>";
+  }
+  $("#cal-grid").innerHTML = html;
+  $("#cal-title").textContent = first.toLocaleDateString([], { month: "long", year: "numeric" });
+  $("#cal-next").disabled = calMonth >= today.slice(0, 7);
+}
+function openCal() {
+  calMonth = selectedDay().slice(0, 7);
+  $("#cal").hidden = false;
+  $("#day-label").setAttribute("aria-expanded", "true");
+  renderCal();
+}
+function closeCal() {
+  $("#cal").hidden = true;
+  $("#day-label").setAttribute("aria-expanded", "false");
+}
+function daySpan(a, b) { return Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 864e5); }
+function trendSeries() {
+  var by = {};
+  current().foods.forEach(function (e) {
+    var k = dayKey(e.ts);
+    (by[k] = by[k] || []).push(e);
+  });
+  var days = Object.keys(by).sort();
+  if (days.length > 60) days = days.slice(-60);
+  return days.map(function (k) {
+    var items = [].concat.apply([], by[k].map(function (e) { return e.items; }));
+    var t = P.totals(items);
+    return { date: k, kcal: t.kcal, p: t.p, c: t.c, f: t.f };
+  });
+}
+function trendChart(points, key, goal, color, unit) {
+  var W = 360, H = 132, pl = 36, pr = 8, pt = 16, pb = 22;
+  if (!points.length) return "";
+  var vals = points.map(function (p) { return +p[key] || 0; }).concat([+goal || 0]);
+  var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  if (hi === lo) { lo = Math.max(0, lo - 1); hi = hi + 1; }
+  var padV = Math.max(hi - lo, 1) * 0.12;
+  lo = Math.max(0, lo - padV); hi = hi + padV;
+  var t0 = new Date(points[0].date + "T12:00:00").getTime(), t1 = new Date(points[points.length - 1].date + "T12:00:00").getTime();
+  function x(d) { var t = new Date(d + "T12:00:00").getTime(); return t1 === t0 ? pl + (W - pl - pr) / 2 : pl + (t - t0) / (t1 - t0) * (W - pl - pr); }
+  function y(v) { return pt + (hi - v) / (hi - lo) * (H - pt - pb); }
+  var s = '<svg viewBox="0 0 ' + W + " " + H + '" role="img">';
+  s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(goal) + '" y2="' + y(goal) + '" stroke="#1F5C45" stroke-width="1.4" stroke-dasharray="6 4" opacity=".8"/>';
+  s += '<text x="' + (W - pr) + '" y="' + Math.max(11, y(goal) - 4) + '" text-anchor="end" font-size="11" font-weight="600" fill="#1F5C45">Goal ' + n0(goal) + "</text>";
+  var seg = [];
+  function drawSeg() {
+    if (seg.length > 1) s += '<polyline points="' + seg.map(function (p) { return x(p.date).toFixed(1) + "," + y(+p[key] || 0).toFixed(1); }).join(" ") + '" fill="none" stroke="' + color + '" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>';
+    seg = [];
+  }
+  points.forEach(function (p, i) {
+    if (i && daySpan(points[i - 1].date, p.date) > 1) drawSeg();
+    seg.push(p);
+  });
+  drawSeg();
+  points.forEach(function (p) {
+    var tip = fmtShort(p.date) + ": " + n0(p[key]) + " " + unit;
+    s += '<circle class="hit" cx="' + x(p.date).toFixed(1) + '" cy="' + y(+p[key] || 0).toFixed(1) + '" r="11" fill="transparent" data-tip="' + esc(tip) + '" tabindex="0"><title>' + esc(tip) + "</title></circle>";
+    s += '<circle cx="' + x(p.date).toFixed(1) + '" cy="' + y(+p[key] || 0).toFixed(1) + '" r="3.5" fill="' + color + '" stroke="#FBFAF7" stroke-width="1.5" pointer-events="none"/>';
+  });
+  var idxs = points.length <= 1 ? [0] : points.length === 2 ? [0, 1] : [0, Math.floor((points.length - 1) / 2), points.length - 1];
+  idxs.forEach(function (i, n) {
+    var anchor = idxs.length > 1 && n === 0 ? "start" : idxs.length > 1 && n === idxs.length - 1 ? "end" : "middle";
+    s += '<text x="' + x(points[i].date).toFixed(1) + '" y="' + (H - 4) + '" text-anchor="' + anchor + '" font-size="11" fill="#6E6A62">' + esc(fmtShort(points[i].date)) + "</text>";
+  });
+  return s + "</svg>";
+}
+function renderTrends() {
+  var pts = trendSeries(), g = current().goals, host = $("#trend-charts");
+  if (!pts.length) { host.innerHTML = '<p class="empty">Log a few days to see trends.</p>'; $("#trend-tip").hidden = true; return; }
+  var specs = [
+    ["kcal", "Calories", g.kcal, "#1C1B19", "kcal"],
+    ["p", "Protein", g.p, "#1F5C45", "g"],
+    ["c", "Carbs", g.c, "#B07D2B", "g"],
+    ["f", "Fat", g.f, "#7A5A8C", "g"]
+  ];
+  host.innerHTML = specs.map(function (s) {
+    return '<div class="trend"><h3>' + s[1] + "</h3>" + trendChart(pts, s[0], s[2], s[3], s[4]) + "</div>";
+  }).join("");
+}
 function renderToday() {
-  var prof = current(), g = prof.goals, t = dayTotals(todayKey());
-  $("#today-date").textContent = new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  var prof = current(), g = prof.goals, day = selectedDay(), t = dayTotals(day), onToday = day === todayKey();
+  var when = new Date(day + "T12:00:00");
+  $("#today-date").textContent = when.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  $("#day-next").disabled = onToday;
+  $("#day-today").hidden = onToday;
   $("#today-who").textContent = prof.name;
   $("#kcal-eaten").textContent = n0(t.kcal); $("#kcal-goal").textContent = n0(g.kcal);
   var left = g.kcal - t.kcal, pill = $("#kcal-left");
   pill.textContent = left >= 0 ? n0(left) + " kcal left" : n0(-left) + " kcal over"; pill.classList.toggle("over", left < 0);
   var C = 2 * Math.PI * 50, frac = g.kcal > 0 ? Math.min(1, t.kcal / g.kcal) : 0, fg = $("#ring-fg");
   fg.style.strokeDasharray = C.toFixed(2); fg.style.strokeDashoffset = (C * (1 - frac)).toFixed(2); fg.classList.toggle("over", left < 0);
-  var list = prof.foods.filter(function (e) { return dayKey(e.ts) === todayKey(); }).sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
+  var list = prof.foods.filter(function (e) { return dayKey(e.ts) === day; }).sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
   var todayItems = [].concat.apply([], list.map(function (e) { return e.items; }));
   $("#macro-bars").innerHTML = bar("Protein", t.p, g.p, "var(--p)", "g") + bar("Carbs", t.c, g.c, "var(--c)", "g") + bar("Fat", t.f, g.f, "var(--f)", "g");
   $("#macro-bars").hidden = todayNut !== "macros";
@@ -1038,7 +1162,11 @@ function renderToday() {
   nut.hidden = todayNut !== "nutrients";
   nut.innerHTML = nutrientHTML(todayItems, prof);
   $$("#today-mode button").forEach(function (b) { b.classList.toggle("active", b.dataset.nut === todayNut); });
-  $("#today-entries").innerHTML = list.length ? list.map(function (e) { return entryHTML(e, true); }).join("") : '<li class="empty">Nothing logged yet today.</li>';
+  var foodH = onToday ? "Today's food" : (fmtDay(day) === "Yesterday" ? "Yesterday's food" : fmtShort(day) + " food");
+  $("#today-food-h").textContent = foodH;
+  $("#today-entries").innerHTML = list.length ? list.map(function (e) { return entryHTML(e, true); }).join("") : '<li class="empty">Nothing logged ' + (onToday ? "yet today." : "on this day.") + "</li>";
+  if (!$("#cal").hidden) renderCal();
+  renderTrends();
   var ws = sortedWeights();
   if (ws.length) {
     var last = ws[ws.length - 1], prev = ws.length > 1 ? ws[ws.length - 2] : null;
@@ -1046,8 +1174,63 @@ function renderToday() {
     var to = last.lb - g.weight;
     $("#w-latest-sub").textContent = fmtShort(last.date) + (prev ? " \u00b7 " + (last.lb - prev.lb >= 0 ? "+" : "") + n1(last.lb - prev.lb) + " lb" : "") + " \u00b7 " + (Math.abs(to) < 0.05 ? "at goal" : n1(Math.abs(to)) + " lb " + (to > 0 ? "above" : "below") + " goal");
     $("#w-spark").innerHTML = weightChart(ws.slice(-14), g.weight, true);
-  } else { $("#w-latest").innerHTML = "&mdash;"; $("#w-latest-sub").textContent = "No weigh-ins yet"; $("#w-spark").innerHTML = ""; }
+  }   else { $("#w-latest").innerHTML = "&mdash;"; $("#w-latest-sub").textContent = "No weigh-ins yet"; $("#w-spark").innerHTML = ""; }
 }
+$("#day-prev").addEventListener("click", function () { shiftDay(-1); });
+$("#day-next").addEventListener("click", function () { if (!$("#day-next").disabled) shiftDay(1); });
+$("#day-today").addEventListener("click", function () { closeCal(); setViewDay(todayKey()); });
+$("#day-label").addEventListener("click", function () { if ($("#cal").hidden) openCal(); else closeCal(); });
+$("#cal-prev").addEventListener("click", function () {
+  var d = new Date(calMonth + "-01T12:00:00");
+  d.setMonth(d.getMonth() - 1);
+  calMonth = d.getFullYear() + "-" + pad(d.getMonth() + 1);
+  renderCal();
+});
+$("#cal-next").addEventListener("click", function () {
+  if ($("#cal-next").disabled) return;
+  var d = new Date(calMonth + "-01T12:00:00");
+  d.setMonth(d.getMonth() + 1);
+  var next = d.getFullYear() + "-" + pad(d.getMonth() + 1);
+  if (next > todayKey().slice(0, 7)) return;
+  calMonth = next;
+  renderCal();
+});
+$("#cal-grid").addEventListener("click", function (ev) {
+  var b = ev.target.closest("button[data-day]");
+  if (!b || b.disabled) return;
+  closeCal();
+  setViewDay(b.dataset.day);
+});
+$("#trend-charts").addEventListener("click", showTrendTip);
+$("#trend-charts").addEventListener("mouseover", showTrendTip);
+function showTrendTip(ev) {
+  var hit = ev.target.closest("[data-tip]");
+  var tip = $("#trend-tip");
+  if (!hit) { tip.hidden = true; return; }
+  tip.hidden = false;
+  tip.textContent = hit.getAttribute("data-tip");
+}
+$("#today-entries").addEventListener("click", function (ev) {
+  var b = ev.target.closest("button[data-act]"); if (!b) return;
+  var row = b.closest("[data-id]"); if (!row) return;
+  var id = row.dataset.id, prof = current();
+  if (b.dataset.act === "del") { if (confirm("Delete this entry?")) { prof.foods = prof.foods.filter(function (e) { return e.id !== id; }); save(); renderAll(); } }
+  else openEditor(id);
+});
+(function () {
+  var touch = null, host = $("#view-today");
+  host.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1 || e.target.closest("button, a, input, select, textarea, svg, .cal")) { touch = null; return; }
+    touch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  host.addEventListener("touchend", function (e) {
+    if (!touch) return;
+    var dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
+    touch = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    shiftDay(dx > 0 ? -1 : 1);
+  }, { passive: true });
+})();
 
 /* ---------------- weight ---------------- */
 function sortedWeights() { return current().weights.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }); }
