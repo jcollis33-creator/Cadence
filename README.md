@@ -31,9 +31,9 @@ Cadence is a private food, macro and weight tracker. It's plain HTML, CSS and Ja
 
 The header shows who is logging: a small avatar and name. Tap it to switch, add, rename, or remove a profile. Joseph, Cindy, and Leo are already there. Joseph is the default, and the last person you opened is remembered in this browser.
 
-Food logs, daily goals (calories, protein, carbs, fat, and goal weight), and weigh-ins belong to the active profile. Today, Food, Weight, and Goals show only that person's numbers. Recipes are a shared household library. Logging a serving writes into the active profile's food log. The USDA API key and the online-lookup switch stay global.
+Food logs, daily goals (calories, protein, carbs, fat, and goal weight), and weigh-ins belong to the active profile. Today, Food, Weight, and Goals show only that person's numbers. Recipes and saved web lookups are a shared household library. Logging a serving writes into the active profile's food log. The USDA API key and the online-lookup switch stay global.
 
-An older `cadence.v1` save is copied into Joseph's profile the first time a profiles build loads. Nothing is dropped. The `cadence.v1` key is left in place as a backup. The working copy is now `cadence.v3`: `{ version, activeProfileId, profiles: [{ id, name, color, age, sex, foods, weights, goals, lock }], recipes, settings }`. A `cadence.v2` save is migrated forward and that key is kept too. Food entries gain a `micros` object when they are logged; older entries are left as they were.
+An older `cadence.v1` save is copied into Joseph's profile the first time a profiles build loads. Nothing is dropped. The `cadence.v1` key is left in place as a backup. The working copy is now `cadence.v4`: `{ version, activeProfileId, profiles: [{ id, name, color, age, sex, foods, weights, goals, lock }], recipes, webFoods, settings }`. Older `cadence.v3`, `cadence.v2`, and `cadence.v1` saves are migrated forward and those keys are kept. Food entries gain a `micros` object when they are logged; older entries are left as they were.
 
 Removing a profile asks first. Removing Joseph names the entries that would be deleted.
 
@@ -64,18 +64,35 @@ Built-in foods carry USDA FoodData Central values (SR Legacy April 2018, Foundat
 
 Recipes sum those values into the batch and into each serving. A day that still has an entry from before this update (no `micros` field) says **Incomplete — some entries logged before nutrient tracking**. Those entries are left out of the totals. A nutrient that is missing on only some foods is marked incomplete instead of being shown as zero.
 
-The working save is `cadence.v3`. A previous `cadence.v2` key is kept. Export includes `micros` and still accepts older backups.
+The working save is `cadence.v4`. Previous `cadence.v3` and `cadence.v2` keys are kept. Export includes `micros` and still accepts older backups.
 
 ## How nutrition lookup works
 
 1. The parser splits phrases on commas, "and", "with", "plus" and similar words. It keeps dishes such as "mac and cheese", "PB&J" and "coffee with milk" together.
    - It understands numbers and number words, "a/an", "half", fractions ("1 1/2"), "a dozen", and units (g, oz, lb, cup, tbsp, tsp, slice, scoop, serving, bowl…).
 2. It then looks in the built-in list of about 240 common foods (`js/foods.js`). Calories and macros are the previous serving values, except a few that clearly disagreed with the matched USDA entry. Micronutrients are the matched FoodData Central values for that serving.
-3. If there's no good match and **Online lookup** is on, Cadence asks the **USDA FoodData Central** search API.
+3. If there's no good match and **Online lookup** is on, Cadence asks public sources that the browser can call directly. See **Web lookup** below.
+   - A plain food (no restaurant or brand in the name) still goes to USDA Foundation, SR Legacy, and FNDDS first, the same as before.
    - It uses the shared `DEMO_KEY`. That key is rate-limited per IP address (USDA says roughly 30 requests an hour and 50 a day), so heavy use will hit "rate limit reached".
    - A free personal key fixes this: get one at <https://fdc.nal.usda.gov/api-key-signup> and paste it in **Goals › Food lookup**.
    - When a USDA match is listed by cups or spoons, the weight is estimated (about 240 g a cup) and the item is labelled "estimate", so check it.
-4. Anything still unmatched gets macros typed in by hand. Low-confidence matches are labelled "best guess — check".
+4. Anything still unmatched can be typed from the nutrition label. That label is saved in the shared lookup cache.
+
+## Web lookup
+
+The built-in list and the generic USDA search do not cover every packaged food. Generic USDA (Foundation, SR Legacy, FNDDS) already includes some chain items, such as McDonald's Chicken McNuggets. It does **not** search USDA Branded Foods. Cadence adds that, plus Open Food Facts, when a name is still unknown or when the phrase names a restaurant or brand.
+
+Sources, checked from a browser origin:
+
+- **USDA FoodData Central**, including `dataType=Branded`. CORS allows it (`access-control-allow-origin: *`). Branded foods are mostly grocery products with a label serving. Restaurant coverage is uneven: McDonald's menu items are often in SR Legacy, while Chipotle the restaurant is not. A search for Chipotle returns other companies' foods that use the word, such as a grocery chicken bowl.
+- **Open Food Facts** search at `world.openfoodfacts.net` (the `.org` search was returning 503, and `search.openfoodfacts.org` does not send `Access-Control-Allow-Origin`, so the browser cannot use it). No key. It has brands and some restaurant items, with nutrients per 100 g. Micros that the product page does not list stay unknown. Vitamin A is omitted when the published unit is IU, because that is not µg RAE.
+- **Nutritionix** is not used. As of October 2026 their developer site says the public free trial for developers, students, and hobbyists is gone. A free business trial (up to 2 monthly active users) exists only by asking their sales team. Their pricing page lists paid plans from $499 a month, billed annually. Cadence does not add App ID or key fields for it.
+
+When the phrase names a brand, Cadence prefers matches whose name or brand includes it and shows the top few before anything is saved. Each row shows the source, the item name, and the calories for that serving. **None of these — enter the label** saves a manual entry into the same cache. A `0` you type is zero. A box you leave empty is unknown.
+
+Saved lookups live in the household `webFoods` list, keyed by the normalized name, next to recipes. Each one stores the source, the source id and URL, the serving, calories, macros, micros, and `lastVerified`. An entry that came from that cache says **Verified 2026-10-28 via USDA FoodData Central** (the date and the source change).
+
+Logging the same name again uses the cache and does not call the network, until `lastVerified` is more than 6 months old. Then Cadence logs the saved values immediately and re-fetches that source in the background. A successful refresh updates the cache and that new entry. If the refresh fails or the phone is offline, the old numbers stay and the entry gets a small **couldn't refresh** note. **Refresh** on a web-sourced row (the day card or the edit sheet) forces a lookup, shows the current numbers next to the new ones, and updates that entry plus the cache only if you accept. Other days are left as they were.
 
 All numbers are estimates. Brands and recipes vary.
 
@@ -96,7 +113,7 @@ When the mic button does work, Cadence logs the item as soon as you stop speakin
 
 ## Your data
 
-- Everything is saved in your browser's `localStorage` under the key `cadence.v3` (see Profiles and Micronutrients). Previous `cadence.v2` and `cadence.v1` values are kept as backups and are not deleted.
+- Everything is saved in your browser's `localStorage` under the key `cadence.v4` (see Profiles, Micronutrients, and Web lookup). Previous `cadence.v3`, `cadence.v2`, and `cadence.v1` values are kept as backups and are not deleted.
 - Data is **per device and per browser**. Your phone and laptop don't sync. Cindy's log on Joseph's phone is not on Cindy's phone. Clearing site data or private browsing erases it, and the file:// copy and the https:// copy of Cadence don't share data.
 - Use **Goals › Export JSON** to make a backup or move devices, then **Import JSON** on the other device. A v2 import replaces profiles (profiles left out of a partial export are kept if they are still on this device). A v1 import replaces the open profile's food, weight, and goals, plus the shared recipes and settings.
 

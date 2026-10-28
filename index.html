@@ -184,16 +184,16 @@
 
   <form class="card" id="settings-form">
     <h2>Food lookup</h2>
-    <label class="check"><input type="checkbox" id="s-online"> Look up unknown foods online (USDA FoodData Central)</label>
+    <label class="check"><input type="checkbox" id="s-online"> Look up unknown foods online (USDA and Open Food Facts)</label>
     <label>Your FDC API key (optional)<input id="s-key" type="text" placeholder="DEMO_KEY is used if empty" autocomplete="off" spellcheck="false"></label>
-    <div class="hint">DEMO_KEY is shared and rate-limited. A free personal key takes a minute at <a href="https://fdc.nal.usda.gov/api-key-signup" target="_blank" rel="noopener">fdc.nal.usda.gov/api-key-signup</a>.</div>
+    <div class="hint">DEMO_KEY is shared and rate-limited. A free personal key takes a minute at <a href="https://fdc.nal.usda.gov/api-key-signup" target="_blank" rel="noopener">fdc.nal.usda.gov/api-key-signup</a>. Nutritionix no longer has a public free developer key, so Cadence does not ask for one.</div>
     <div class="row end"><button class="btn" type="submit">Save</button></div>
     <div class="hint ok" id="s-saved"></div>
   </form>
 
   <div class="card">
     <h2>Your data</h2>
-    <p class="hint">Food logs, goals and weights are kept separately for each profile. Recipes and the USDA key are shared. A PIN hides a locked profile on this device and encrypts that profile in this browser. It is not a password against someone with developer tools. Phones do not sync with each other. Export includes a locked profile only after its PIN.</p>
+    <p class="hint">Food logs, goals and weights are kept separately for each profile. Recipes, saved food lookups, and the USDA key are shared. A PIN hides a locked profile on this device and encrypts that profile in this browser. It is not a password against someone with developer tools. Phones do not sync with each other. Export includes a locked profile only after its PIN.</p>
     <div class="row wrap">
       <button class="btn" type="button" id="d-export">Export JSON</button>
       <button class="btn ghost" type="button" id="d-import">Import JSON</button>
@@ -237,6 +237,10 @@
 
 <dialog id="gate-dialog" class="gate" aria-label="Profile lock">
   <div id="gate-root"></div>
+</dialog>
+
+<dialog id="web-dialog" aria-label="Food match">
+  <div id="web-dialog-body"></div>
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>

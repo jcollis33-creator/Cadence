@@ -160,6 +160,20 @@ dialog::backdrop{background:rgba(28,27,25,.45)}
 .dlg-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .iconx{border:0;background:none;color:var(--ink);font-size:1.4rem;line-height:1;cursor:pointer;padding:4px 6px}
 #profile-dialog{width:min(420px,94vw);max-height:90vh;overflow:auto}
+.verified{font-size:.78rem;color:var(--muted);margin-top:2px}
+.refresh-note{color:var(--warn)}
+.entry .items li{display:block}
+.entry .items .irow{display:flex;justify-content:space-between;gap:8px}
+.entry .items button[data-act="refresh"],.eweb .refresh{border:0;background:none;color:var(--forest);font:600 .78rem inherit;padding:2px 0;cursor:pointer}
+.eweb{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-top:2px}
+.match-list{display:flex;flex-direction:column;gap:8px;margin:10px 0;max-height:50vh;overflow:auto}
+.match-opt{display:flex;flex-direction:column;gap:2px;text-align:left;font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.match-opt b{font-size:.92rem}
+.match-opt span{font-size:.78rem;color:var(--muted)}
+.diff{width:100%;border-collapse:collapse;font-size:.82rem;margin:8px 0}
+.diff th,.diff td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+.diff tr.chg td:last-child{color:var(--warn);font-weight:600}
+#web-dialog{width:min(440px,94vw);max-height:90vh;overflow:auto}
 dialog.gate{width:min(400px,94vw)}
 dialog.gate::backdrop{background:rgba(28,27,25,.55)}
 .gate-ava{width:56px;height:56px;border-radius:50%;margin:0 auto 8px;display:grid;place-items:center;color:var(--paper);font-weight:800;font-size:1.35rem}

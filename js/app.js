@@ -1,9 +1,10 @@
 /* Cadence app logic. Plain JS, no dependencies.
- * Profiles live in localStorage key cadence.v3. cadence.v2 and cadence.v1 are kept as backups. */
+ * Profiles live in localStorage key cadence.v4. cadence.v3, cadence.v2 and cadence.v1 are kept as backups. */
 (function () {
 "use strict";
 var P = window.CadenceParser, FOODS = window.CADENCE_FOODS, INDEX = P.buildIndex(FOODS);
-var KEY = "cadence.v3";
+var KEY = "cadence.v4";
+var KEY_V3 = "cadence.v3";
 var KEY_V2 = "cadence.v2";
 var KEY_V1 = "cadence.v1";
 var DEFAULT_GOALS = { kcal: 2200, p: 180, c: 220, f: 70, weight: 180 };
@@ -69,7 +70,7 @@ function makeProfile(id, name, color, extra) {
 }
 function blankV2() {
   return {
-    version: 3,
+    version: 4,
     activeProfileId: "joseph",
     profiles: [
       makeProfile("joseph", "Joseph", "#1F5C45"),
@@ -77,8 +78,40 @@ function blankV2() {
       makeProfile("leo", "Leo", "#2E7A5E")
     ],
     recipes: [],
+    webFoods: [],
     settings: copySettings(null)
   };
+}
+function copyMicros(m) {
+  var o = {};
+  P.MICRO_KEYS.forEach(function (k) {
+    if (!m || m[k] == null || m[k] === "" || isNaN(+m[k])) o[k] = null;
+    else o[k] = +m[k];
+  });
+  return o;
+}
+function copyWebFoods(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(function (w) { return w && w.key && w.name && w.source; }).map(function (w) {
+    var per = w.per100 && typeof w.per100 === "object" ? {
+      kcal: w.per100.kcal == null || w.per100.kcal === "" || isNaN(+w.per100.kcal) ? null : +w.per100.kcal,
+      p: w.per100.p == null || w.per100.p === "" || isNaN(+w.per100.p) ? null : +w.per100.p,
+      c: w.per100.c == null || w.per100.c === "" || isNaN(+w.per100.c) ? null : +w.per100.c,
+      f: w.per100.f == null || w.per100.f === "" || isNaN(+w.per100.f) ? null : +w.per100.f,
+      micros: copyMicros(w.per100.micros)
+    } : null;
+    return {
+      key: String(w.key), query: String(w.query || w.key), source: String(w.source),
+      sourceLabel: String(w.sourceLabel || w.source), sourceId: String(w.sourceId || ""),
+      sourceUrl: String(w.sourceUrl || ""), name: String(w.name), brand: String(w.brand || ""),
+      servingLabel: String(w.servingLabel || ""), grams: +w.grams || null, pieceCount: w.pieceCount || null,
+      kcal: w.kcal == null || w.kcal === "" || isNaN(+w.kcal) ? null : +w.kcal,
+      p: w.p == null || w.p === "" || isNaN(+w.p) ? null : +w.p,
+      c: w.c == null || w.c === "" || isNaN(+w.c) ? null : +w.c,
+      f: w.f == null || w.f === "" || isNaN(+w.f) ? null : +w.f,
+      micros: copyMicros(w.micros), per100: per, lastVerified: String(w.lastVerified || "").slice(0, 10)
+    };
+  });
 }
 function wrapOk(w) { return !!(w && typeof w.iv === "string" && typeof w.ct === "string" && w.iv && w.ct); }
 function sanitizeLock(lock) {
@@ -127,10 +160,11 @@ function sanitizeV2(d) {
   if (!profiles.length) return blankV2();
   var active = profiles.some(function (p) { return p.id === d.activeProfileId; }) ? d.activeProfileId : profiles[0].id;
   return {
-    version: 3,
+    version: 4,
     activeProfileId: active,
     profiles: profiles,
     recipes: rederiveRecipes(Array.isArray(d.recipes) ? d.recipes : []),
+    webFoods: copyWebFoods(d.webFoods),
     settings: copySettings(d.settings)
   };
 }
@@ -168,8 +202,9 @@ function migrateV1(d) {
 }
 function toStored(s) {
   return {
-    version: 3,
+    version: 4,
     activeProfileId: s.activeProfileId,
+    webFoods: s.webFoods || [],
     profiles: s.profiles.map(function (p) {
       if (p.lock && p.lock.enabled && !p.lock.pending) return { id: p.id, name: p.name, color: p.color, lock: p.lock };
       var o = { id: p.id, name: p.name, color: p.color, age: p.age, sex: p.sex, foods: p.foods, weights: p.weights, goals: p.goals };
@@ -190,6 +225,12 @@ function readJSON(key) {
 function load() {
   var parsed = readJSON(KEY);
   if (parsed && typeof parsed === "object") return sanitizeV2(parsed);
+  var v3 = readJSON(KEY_V3);
+  if (v3 && typeof v3 === "object") {
+    var fromV3 = sanitizeV2(v3);
+    try { localStorage.setItem(KEY, JSON.stringify(toStored(fromV3))); } catch (e1) {}
+    return fromV3;
+  }
   var older = readJSON(KEY_V2);
   if (older && typeof older === "object") {
     var migrated = sanitizeV2(older);
@@ -237,6 +278,7 @@ function snapshot() {
   return {
     activeProfileId: state.activeProfileId,
     recipes: JSON.parse(JSON.stringify(state.recipes || [])),
+    webFoods: JSON.parse(JSON.stringify(state.webFoods || [])),
     settings: JSON.parse(JSON.stringify(state.settings || {})),
     profiles: state.profiles.map(function (p) {
       return {
@@ -272,7 +314,7 @@ function writeSnap(snap) {
     return o;
   })).then(function (profiles) {
     localStorage.setItem(KEY, JSON.stringify({
-      version: 3, activeProfileId: snap.activeProfileId, profiles: profiles, recipes: snap.recipes, settings: snap.settings
+      version: 4, activeProfileId: snap.activeProfileId, profiles: profiles, recipes: snap.recipes, webFoods: snap.webFoods, settings: snap.settings
     }));
   });
 }
@@ -398,13 +440,31 @@ function setupMic(btn, statusEl, onInterim, onFinal) {
 }
 
 /* ---------------- lookup ---------------- */
-function needsOnline(it) { return it.source === "manual" || (it.source === "db" && it.score < 50); }
+function needsOnline(it) { return it.source === "manual" || (it.source === "db" && it.score < 50) || P.localMissesBrand(it); }
+function fdcKey() { return state.settings.fdcKey || "DEMO_KEY"; }
+function isoToday() { var d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function monthsBetween(iso) {
+  if (!iso) return 99;
+  var t = new Date(String(iso).slice(0, 10) + "T12:00:00").getTime();
+  if (isNaN(t)) return 99;
+  return (Date.now() - t) / (1000 * 60 * 60 * 24 * 30.44);
+}
+function findWeb(name) {
+  var k = P.keyOf(name || "");
+  if (!k) return null;
+  for (var i = 0; i < state.webFoods.length; i++) if (state.webFoods[i].key === k) return state.webFoods[i];
+  return null;
+}
+function upsertWeb(entry) {
+  var i = state.webFoods.findIndex(function (w) { return w.key === entry.key; });
+  if (i >= 0) state.webFoods[i] = entry; else state.webFoods.push(entry);
+}
 function enrichOnline(items) {
   if (!state.settings.online || !navigator.onLine) return Promise.resolve({ items: items, error: null });
   var err = null;
   return Promise.all(items.map(function (it) {
-    if (!needsOnline(it)) return it;
-    return P.usdaSearch(it.name || it.text, state.settings.fdcKey || "DEMO_KEY").then(function (res) {
+    if (!needsOnline(it) || P.localMissesBrand(it)) return it;
+    return P.usdaSearch(it.name || it.text, fdcKey()).then(function (res) {
       if (res) { var keepGuess = it.source === "db"; P.applyUsda(it, res); if (keepGuess) it.note += " (local guess replaced)"; }
       return it;
     }).catch(function (e) { err = e.message; return it; });
@@ -418,11 +478,23 @@ function blankMicros() {
   P.MICRO_KEYS.forEach(function (k) { o[k] = null; });
   return o;
 }
+function keepNum(v) {
+  if (v == null || v === "" || isNaN(+v)) return null;
+  return +v;
+}
 function cleanItem(it) {
   var o = { text: it.text, qty: it.qty, unit: it.unit || "", food: it.food, source: it.source, matched: !!it.matched,
-    kcal: +it.kcal || 0, p: +it.p || 0, c: +it.c || 0, f: +it.f || 0 };
+    kcal: keepNum(it.kcal), p: keepNum(it.p), c: keepNum(it.c), f: keepNum(it.f) };
+  if (o.kcal == null && it.source !== "web") o.kcal = 0;
+  if (o.p == null && it.source !== "web") o.p = 0;
+  if (o.c == null && it.source !== "web") o.c = 0;
+  if (o.f == null && it.source !== "web") o.f = 0;
   if (it.grams) o.grams = it.grams; if (it.note) o.note = it.note; if (it.recipeId) o.recipeId = it.recipeId; if (it.fdcId) o.fdcId = it.fdcId;
   if (it.micros && typeof it.micros === "object") o.micros = JSON.parse(JSON.stringify(it.micros));
+  ["webKey", "webSource", "sourceLabel", "sourceId", "sourceUrl", "brand", "lastVerified", "servingLabel", "webBasis", "refreshNote"].forEach(function (k) {
+    if (it[k]) o[k] = it[k];
+  });
+  if (it.webMult != null) o.webMult = it.webMult;
   return o;
 }
 
@@ -433,35 +505,96 @@ function renderPreview() {
   if (!v) { el.innerHTML = ""; return; }
   var items = itemsFromText(v);
   el.innerHTML = items.map(function (it) {
-    var miss = !it.matched;
-    return '<div class="it' + (miss ? " miss" : "") + '"><span>' + esc((it.qty !== 1 || it.unit ? n1(it.qty) + (it.unit ? " " + it.unit : "") + " \u00d7 " : "") + it.food) +
-      (miss ? (state.settings.online ? " \u2014 will check USDA" : " \u2014 not found, edit after logging") : "") + "</span><span>" + (miss ? "?" : n0(it.kcal) + " kcal") + "</span></div>";
+    var web = needsOnline(it);
+    var cached = web ? findWeb(it.name || it.text) : null;
+    var label = (it.qty !== 1 || it.unit ? n1(it.qty) + (it.unit ? " " + it.unit : "") + " \u00d7 " : "") + (cached ? cached.name : it.food);
+    var note = "";
+    if (cached) note = " \u2014 saved match";
+    else if (web) note = state.settings.online ? " \u2014 will look up" : " \u2014 not found, edit after logging";
+    return '<div class="it' + (web && !cached ? " miss" : "") + '"><span>' + esc(label + note) + "</span><span>" + (web && !cached ? "?" : n0(cached ? cached.kcal : it.kcal) + " kcal") + "</span></div>";
   }).join("");
 }
 foodInput.addEventListener("input", function () { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 150); });
 function resetWhen() { $("#food-when").value = toLocalInput(new Date()); }
 
+function commitLog(pid, text, when, items, error) {
+  var dest = profileById(pid);
+  if (!dest || !canView(dest)) { toast("That profile is locked"); return null; }
+  var refreshes = [];
+  var entry = { id: uid(), ts: (when || new Date()).toISOString(), text: text, items: items.map(function (it) {
+    var refresh = !!it._refresh;
+    var c = cleanItem(it);
+    if (!c.micros) c.micros = blankMicros();
+    if (refresh) refreshes.push(c.webKey);
+    return c;
+  }) };
+  dest.foods.push(entry); save();
+  foodInput.value = ""; renderPreview(); resetWhen(); renderAll();
+  var t = entryTotals(entry), miss = entry.items.filter(function (i) { return !i.matched; });
+  toast("Logged " + (t.kcal == null ? "\u2014" : n0(t.kcal)) + " kcal" + (miss.length ? " \u2014 add macros for " + miss.length + " item(s)" : ""));
+  if (error) $("#mic-status").className = "hint warn", $("#mic-status").textContent = error;
+  if (miss.length) openEditor(entry.id);
+  refreshes.forEach(function (key) { backgroundRefresh(pid, entry.id, key); });
+  return entry;
+}
+function rememberWeb(query, cand) {
+  var entry = P.webEntryFromCandidate(query, cand, isoToday());
+  upsertWeb(entry);
+  save();
+  return entry;
+}
+function attachWeb(it, entry, stale) {
+  P.applyCached(it, entry);
+  if (stale) it._refresh = true;
+  return it;
+}
+function resolveForLog(items) {
+  var err = null;
+  var chain = Promise.resolve();
+  items.forEach(function (it, idx) {
+    chain = chain.then(function () {
+      if (!needsOnline(it)) return;
+      var name = it.name || it.text;
+      var cached = findWeb(name);
+      if (cached && monthsBetween(cached.lastVerified) <= 6) { attachWeb(it, cached, false); return; }
+      if (cached && monthsBetween(cached.lastVerified) > 6) { attachWeb(it, cached, true); return; }
+      if (!state.settings.online || !navigator.onLine) return;
+      var brand = P.detectBrand(name);
+      function picked(cands, whichBrand, error) {
+        if (error) err = error;
+        return askMatch(it, cands || [], whichBrand, err).then(function (ok) { if (!ok) throw new Error("cancel"); });
+      }
+      if (brand || P.localMissesBrand(it)) {
+        return P.searchWeb(name, fdcKey()).then(function (res) {
+          return picked(res.candidates, res.brand, res.error);
+        }).catch(function (e) {
+          if (e && e.message === "cancel") throw e;
+          return picked([], brand, e.message);
+        });
+      }
+      return P.usdaSearch(name, fdcKey()).then(function (res) {
+        if (res) { var keepGuess = it.source === "db"; P.applyUsda(it, res); if (keepGuess) it.note += " (local guess replaced)"; return; }
+        return P.searchWeb(name, fdcKey()).then(function (found) { return picked(found.candidates, found.brand, found.error); });
+      }).catch(function (e) {
+        if (e && e.message === "cancel") throw e;
+        return picked([], null, e.message);
+      });
+    });
+  });
+  return chain.then(function () { return { items: items, error: err }; });
+}
 function logFood(text, when) {
   text = (text || "").trim();
   if (!text) { toast("Type or say what you ate"); return Promise.resolve(null); }
   var pid = current().id;
   var btn = $("#food-log"); btn.disabled = true; btn.textContent = "Looking up\u2026";
   var items = itemsFromText(text);
-  return enrichOnline(items).then(function (r) {
-    var dest = profileById(pid);
-    if (!dest || !canView(dest)) { toast("That profile is locked"); return null; }
-    var entry = { id: uid(), ts: (when || new Date()).toISOString(), text: text, items: r.items.map(function (it) {
-      var c = cleanItem(it);
-      if (!c.micros) c.micros = blankMicros();
-      return c;
-    }) };
-    dest.foods.push(entry); save();
-    foodInput.value = ""; renderPreview(); resetWhen(); renderAll();
-    var t = entryTotals(entry), miss = entry.items.filter(function (i) { return !i.matched; });
-    toast("Logged " + n0(t.kcal) + " kcal" + (miss.length ? " \u2014 add macros for " + miss.length + " item(s)" : ""));
-    if (r.error) $("#mic-status").className = "hint warn", $("#mic-status").textContent = r.error;
-    if (miss.length) openEditor(entry.id);
-    return entry;
+  return resolveForLog(items).then(function (r) {
+    return commitLog(pid, text, when, r.items, r.error);
+  }).catch(function (e) {
+    if (e && e.message === "cancel") { toast("Didn't log that"); return null; }
+    toast(e && e.message ? e.message : "Lookup failed");
+    return null;
   }).finally(function () { btn.disabled = false; btn.textContent = "Log it"; });
 }
 $("#food-form").addEventListener("submit", function (e) { e.preventDefault(); logFood(foodInput.value, fromLocalInput($("#food-when").value)); });
@@ -483,12 +616,23 @@ function logRecipe(id, qty, when) {
 }
 $("#rq-log").addEventListener("click", function () { var id = $("#rq-select").value; if (id) logRecipe(id, $("#rq-qty").value, fromLocalInput($("#food-when").value)); });
 
+function kcalText(v) { return v == null ? "\u2014" : n0(v); }
+function macroBits(i) {
+  return kcalText(i.kcal) + " kcal \u00b7 " + (i.p == null ? "\u2014" : n1(i.p)) + "/" + (i.c == null ? "\u2014" : n1(i.c)) + "/" + (i.f == null ? "\u2014" : n1(i.f));
+}
+function verifiedHTML(i) {
+  if (i.source !== "web" || !i.lastVerified) return "";
+  return '<div class="verified" data-verified="1">Verified ' + esc(i.lastVerified) + " via " + esc(i.sourceLabel || "web") +
+    (i.refreshNote ? ' <span class="refresh-note">' + esc(i.refreshNote) + "</span>" : "") + "</div>";
+}
 function entryHTML(e, compact) {
   var t = entryTotals(e);
-  if (compact) return '<li><div><div class="t">' + esc(e.text) + '</div><div class="m">' + fmtTime(e.ts) + " \u00b7 P " + n0(t.p) + " C " + n0(t.c) + " F " + n0(t.f) + '</div></div><div class="k">' + n0(t.kcal) + " kcal</div></li>";
-  return '<div class="entry" data-id="' + e.id + '"><div class="top"><div><div class="t"><b>' + esc(e.text) + '</b></div><div class="when">' + fmtTime(e.ts) + '</div></div><div class="k"><b>' + n0(t.kcal) + ' kcal</b><div class="macros">P ' + n1(t.p) + " \u00b7 C " + n1(t.c) + " \u00b7 F " + n1(t.f) + "</div></div></div>" +
-    '<ul class="items">' + e.items.map(function (i) {
-      return '<li class="' + (i.matched ? "" : "miss") + '"><span>' + esc(i.food) + (i.matched ? "" : " \u2014 needs macros") + (i.note ? " \u00b7 " + esc(i.note) : "") + "</span><span>" + n0(i.kcal) + " kcal \u00b7 " + n1(i.p) + "/" + n1(i.c) + "/" + n1(i.f) + "</span></li>";
+  if (compact) return '<li><div><div class="t">' + esc(e.text) + '</div><div class="m">' + fmtTime(e.ts) + " \u00b7 P " + n0(t.p) + " C " + n0(t.c) + " F " + n0(t.f) +
+    e.items.map(verifiedHTML).join("") + '</div></div><div class="k">' + kcalText(t.kcal) + " kcal</div></li>";
+  return '<div class="entry" data-id="' + e.id + '"><div class="top"><div><div class="t"><b>' + esc(e.text) + '</b></div><div class="when">' + fmtTime(e.ts) + '</div></div><div class="k"><b>' + kcalText(t.kcal) + ' kcal</b><div class="macros">P ' + n1(t.p) + " \u00b7 C " + n1(t.c) + " \u00b7 F " + n1(t.f) + "</div></div></div>" +
+    '<ul class="items">' + e.items.map(function (i, idx) {
+      var refresh = (i.source === "web" && i.webSource && i.webSource !== "manual") ? '<button type="button" data-act="refresh" data-idx="' + idx + '">Refresh</button>' : "";
+      return '<li class="' + (i.matched ? "" : "miss") + '"><div class="irow"><span>' + esc(i.food) + (i.matched ? "" : " \u2014 needs macros") + (i.servingLabel ? " \u00b7 " + esc(i.servingLabel) : "") + "</span><span>" + macroBits(i) + "</span></div>" + verifiedHTML(i) + refresh + "</li>";
     }).join("") + '</ul><div class="acts"><button data-act="edit">Edit</button><button data-act="del" class="del">Delete</button></div></div>';
 }
 function renderFood() {
@@ -519,16 +663,245 @@ $("#food-days").addEventListener("click", function (ev) {
   var b = ev.target.closest("button[data-act]"); if (!b) return;
   var id = b.closest(".entry").dataset.id;
   var prof = current();
+  if (b.dataset.act === "refresh") { manualRefresh(prof.id, id, +b.dataset.idx); return; }
   if (b.dataset.act === "del") { if (confirm("Delete this entry?")) { prof.foods = prof.foods.filter(function (e) { return e.id !== id; }); save(); renderAll(); } }
   else openEditor(id);
 });
 
+/* ---------------- web match, label, refresh ---------------- */
+var matchResolve = null, matchItem = null, matchCands = [], pendingDiff = null;
+function webDialog() { return $("#web-dialog"); }
+function hideWeb() {
+  var dlg = webDialog();
+  if (!dlg) return;
+  if (dlg.open && dlg.close) dlg.close();
+  else dlg.removeAttribute("open");
+  var body = $("#web-dialog-body");
+  if (body) body.innerHTML = "";
+}
+function closeWeb(ok) {
+  var fn = matchResolve;
+  matchResolve = null;
+  matchItem = null;
+  hideWeb();
+  if (fn) fn(!!ok);
+}
+function showWeb() {
+  var dlg = webDialog();
+  if (!dlg) return;
+  if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "");
+}
+function manualFieldsHTML(name) {
+  var micros = P.MICRO_KEYS.map(function (k) {
+    var label = { fiber: "Fiber g", sugar: "Sugar g", sodium: "Sodium mg", potassium: "Potassium mg", calcium: "Calcium mg", iron: "Iron mg", magnesium: "Magnesium mg", vita: "Vit A µg", vitc: "Vit C mg", vitd: "Vit D µg", b12: "B12 µg" }[k];
+    return '<label>' + label + '<input data-micro="' + k + '" type="number" step="any" min="0" inputmode="decimal" placeholder="unknown"></label>';
+  }).join("");
+  return '<form id="label-form"><p class="hint">Type the label for <b>' + esc(name) + '</b>. Leave a box empty when the label doesn\'t list it. Empty means unknown, not zero.</p>' +
+    '<label>Name on the label<input id="label-name" required value="' + esc(name) + '"></label>' +
+    '<div class="grid2"><label>Serving<input id="label-serving" placeholder="1 package"></label><label>Grams<input id="label-grams" type="number" min="0" step="any" inputmode="decimal"></label></div>' +
+    '<div class="grid2"><label>Calories<input id="label-kcal" type="number" min="0" step="any" inputmode="decimal"></label><label>Protein g<input id="label-p" type="number" min="0" step="any" inputmode="decimal"></label>' +
+    '<label>Carbs g<input id="label-c" type="number" min="0" step="any" inputmode="decimal"></label><label>Fat g<input id="label-f" type="number" min="0" step="any" inputmode="decimal"></label></div>' +
+    '<details><summary>Other nutrients, if the label has them</summary><div class="grid2">' + micros + '</div></details>' +
+    '<div class="row end"><button class="btn ghost" type="button" id="match-cancel">Cancel</button><button class="btn" type="submit">Save and log</button></div></form>';
+}
+function renderMatch(it, candidates, brand, err) {
+  var q = it.name || it.text;
+  var body = $("#web-dialog-body");
+  var html = "<h2>Which one?</h2><p class=\"hint\">" + esc(q) + "</p>";
+  if (brand) html += '<p class="hint">Preferring ' + esc(brand.name) + '. Public databases often have the packaged food or an older menu item, not the current restaurant build.</p>';
+  if (err) html += '<p class="hint warn">' + esc(err) + "</p>";
+  if (!candidates.length) {
+    html += manualFieldsHTML(q);
+    body.innerHTML = html;
+    webDialog().dataset.mode = "manual";
+    return;
+  }
+  html += '<div class="match-list">' + candidates.map(function (c, i) {
+    var grams = c.grams >= 5 ? c.grams : 100;
+    var kcal = c.per100 && c.per100.kcal != null ? Math.round(c.per100.kcal * grams / 100) : null;
+    return '<button type="button" class="match-opt" data-pick="' + i + '"><b>' + esc(c.name) + "</b><span>" + esc(c.sourceLabel) + (c.brand ? " · " + esc(c.brand) : "") + "</span><span>" +
+      esc(c.servingLabel || (Math.round(grams) + " g")) + " · " + (kcal == null ? "\u2014" : kcal + " kcal") + "</span></button>";
+  }).join("") + '</div><div class="row wrap"><button type="button" class="btn ghost" id="match-manual">None of these — enter the label</button><button type="button" class="btn ghost" id="match-cancel">Cancel</button></div>';
+  body.innerHTML = html;
+  webDialog().dataset.mode = "match";
+}
+function askMatch(it, candidates, brand, err) {
+  matchItem = it;
+  matchCands = candidates || [];
+  return new Promise(function (resolve) {
+    matchResolve = resolve;
+    renderMatch(it, matchCands, brand, err);
+    showWeb();
+  });
+}
+function readOpt(id) {
+  var el = $(id);
+  if (!el || el.value.trim() === "") return null;
+  var n = +el.value;
+  return isNaN(n) ? null : n;
+}
+function rememberManual(query) {
+  var grams = readOpt("#label-grams");
+  var micros = blankMicros();
+  $$("#label-form [data-micro]").forEach(function (el) {
+    micros[el.dataset.micro] = el.value.trim() === "" ? null : +el.value;
+  });
+  var kcal = readOpt("#label-kcal"), p = readOpt("#label-p"), c = readOpt("#label-c"), f = readOpt("#label-f");
+  var per = null;
+  if (grams >= 5) {
+    function up(v) { return v == null ? null : v * 100 / grams; }
+    per = { kcal: up(kcal), p: up(p), c: up(c), f: up(f), micros: P.scaleMicros(micros, 100 / grams) };
+  }
+  var entry = {
+    key: P.keyOf(query), query: query, source: "manual", sourceLabel: "nutrition label", sourceId: "", sourceUrl: "",
+    name: $("#label-name").value.trim() || query, brand: "", servingLabel: $("#label-serving").value.trim() || (grams ? grams + " g" : "1 serving"),
+    grams: grams, pieceCount: null, kcal: kcal, p: p, c: c, f: f, micros: micros, per100: per, lastVerified: isoToday()
+  };
+  upsertWeb(entry);
+  save();
+  return entry;
+}
+function onWebClick(ev) {
+  var pick = ev.target.closest("[data-pick]");
+  if (pick && matchItem) {
+    var cand = matchCands[+pick.dataset.pick];
+    var query = matchItem.name || matchItem.text;
+    var item = matchItem;
+    P.refineUsdaCandidate(cand, fdcKey()).then(function (ready) {
+      attachWeb(item, rememberWeb(query, ready), false);
+      closeWeb(true);
+    }).catch(function (e) { toast(e.message || "Couldn't use that match"); });
+    return;
+  }
+  if (ev.target.id === "match-manual" && matchItem) {
+    $("#web-dialog-body").innerHTML = "<h2>Nutrition label</h2>" + manualFieldsHTML(matchItem.name || matchItem.text);
+    webDialog().dataset.mode = "manual";
+    return;
+  }
+  if (ev.target.id === "match-cancel") { closeWeb(false); return; }
+  if (ev.target.id === "diff-cancel") { pendingDiff = null; hideWeb(); return; }
+  if (ev.target.id === "diff-accept") acceptDiff();
+}
+function onWebSubmit(ev) {
+  ev.preventDefault();
+  if (!matchItem) return;
+  var item = matchItem;
+  var entry = rememberManual(item.name || item.text);
+  attachWeb(item, entry, false);
+  closeWeb(true);
+}
+function diffNum(v) { return v == null || v === "" ? "\u2014" : (Math.round(+v * 100) / 100).toString(); }
+function renderDiff() {
+  var d = pendingDiff;
+  var rows = [
+    ["Calories", d.prev.kcal, d.next.kcal],
+    ["Protein (g)", d.prev.p, d.next.p],
+    ["Carbs (g)", d.prev.c, d.next.c],
+    ["Fat (g)", d.prev.f, d.next.f]
+  ];
+  var labels = { fiber: "Fiber (g)", sugar: "Sugar (g)", sodium: "Sodium (mg)", potassium: "Potassium (mg)", calcium: "Calcium (mg)", iron: "Iron (mg)", magnesium: "Magnesium (mg)", vita: "Vitamin A (µg)", vitc: "Vitamin C (mg)", vitd: "Vitamin D (µg)", b12: "Vitamin B12 (µg)" };
+  P.MICRO_KEYS.forEach(function (k) {
+    rows.push([labels[k], d.prev.micros ? d.prev.micros[k] : null, d.next.micros ? d.next.micros[k] : null]);
+  });
+  var html = "<h2>Refresh this entry?</h2><p class=\"hint\">" + esc(d.next.food) + " · " + esc(d.fresh.sourceLabel) + ". Accepting updates this entry and the saved lookup. Other days stay as they were.</p>" +
+    '<table class="diff"><tr><th>Nutrient</th><th>Now</th><th>From source</th></tr>' +
+    rows.map(function (r) {
+      var changed = diffNum(r[1]) !== diffNum(r[2]);
+      return "<tr" + (changed ? ' class="chg"' : "") + "><td>" + r[0] + "</td><td>" + diffNum(r[1]) + "</td><td>" + diffNum(r[2]) + "</td></tr>";
+    }).join("") + '</table><div class="row end"><button type="button" class="btn ghost" id="diff-cancel">Keep current</button><button type="button" class="btn" id="diff-accept">Accept change</button></div>';
+  $("#web-dialog-body").innerHTML = html;
+  webDialog().dataset.mode = "diff";
+  showWeb();
+}
+function acceptDiff() {
+  var d = pendingDiff;
+  if (!d) return;
+  upsertWeb(d.fresh);
+  var prof = profileById(d.pid);
+  var entry = prof && prof.foods.filter(function (e) { return e.id === d.entryId; })[0];
+  if (entry && entry.items[d.idx]) {
+    var cleaned = cleanItem(d.next);
+    delete cleaned.refreshNote;
+    entry.items[d.idx] = cleaned;
+  }
+  if (d.fromEdit && editing && editing.id === d.entryId) {
+    editing.items = readEditItems();
+    if (editing.items[d.idx]) editing.items[d.idx] = cleanItem(d.next);
+    renderEditItems(editing.items);
+  }
+  pendingDiff = null;
+  save(); renderAll(); hideWeb();
+  toast("Updated this entry");
+}
+function manualRefresh(pid, entryId, idx, fromEdit) {
+  var prof = profileById(pid);
+  var entry = prof && prof.foods.filter(function (e) { return e.id === entryId; })[0];
+  var item = entry && entry.items[idx];
+  if (!item || item.webSource === "manual") { toast("That one was typed from a label"); return; }
+  var cached = state.webFoods.filter(function (w) { return w.key === item.webKey; })[0];
+  if (!cached) { toast("No saved lookup for that food"); return; }
+  if (!navigator.onLine) { toast("Couldn't refresh"); return; }
+  toast("Checking " + (cached.sourceLabel || "the source") + "…");
+  P.refetchWeb(cached, fdcKey()).then(function (cand) {
+    if (!cand) { toast("Couldn't refresh"); return; }
+    var fresh = P.webEntryFromCandidate(cached.query || cached.key, cand, isoToday());
+    fresh.key = cached.key;
+    var next = Object.assign({}, item);
+    P.applyCached(next, fresh);
+    pendingDiff = { pid: pid, entryId: entryId, idx: idx, fromEdit: !!fromEdit, fresh: fresh, next: next, prev: item };
+    renderDiff();
+  }).catch(function () { toast("Couldn't refresh"); });
+}
+function backgroundRefresh(pid, entryId, webKey) {
+  var cached = state.webFoods.filter(function (w) { return w.key === webKey; })[0];
+  function mark() {
+    var prof = profileById(pid);
+    var entry = prof && prof.foods.filter(function (e) { return e.id === entryId; })[0];
+    if (!entry) return;
+    entry.items.forEach(function (it) { if (it.webKey === webKey) it.refreshNote = "couldn't refresh"; });
+    save(); renderAll();
+  }
+  if (!cached || cached.source === "manual") return;
+  if (!state.settings.online || !navigator.onLine) { mark(); return; }
+  P.refetchWeb(cached, fdcKey()).then(function (cand) {
+    if (!cand) { mark(); return; }
+    var fresh = P.webEntryFromCandidate(cached.query || cached.key, cand, isoToday());
+    fresh.key = cached.key;
+    upsertWeb(fresh);
+    var prof = profileById(pid);
+    var entry = prof && prof.foods.filter(function (e) { return e.id === entryId; })[0];
+    if (entry) entry.items.forEach(function (it) {
+      if (it.webKey !== webKey) return;
+      var copy = Object.assign({}, it);
+      P.applyCached(copy, fresh);
+      var cleaned = cleanItem(copy);
+      delete cleaned.refreshNote;
+      entry.items[entry.items.indexOf(it)] = cleaned;
+    });
+    save(); renderAll();
+  }).catch(function () { mark(); });
+}
+
+(function () {
+  var dlg = webDialog();
+  if (!dlg) return;
+  dlg.addEventListener("click", onWebClick);
+  dlg.addEventListener("submit", onWebSubmit);
+  dlg.addEventListener("cancel", function (ev) {
+    ev.preventDefault();
+    if (dlg.dataset.mode === "diff") { pendingDiff = null; hideWeb(); return; }
+    closeWeb(false);
+  });
+})();
+
 /* ---------------- edit dialog ---------------- */
 var dlg = $("#edit-dialog"), editing = null, editingProfileId = null;
-function itemRow(i) {
-  return '<div class="eitem"><input class="e-name" value="' + esc(i.food) + '" aria-label="Item">' +
-    ["kcal", "p", "c", "f"].map(function (k) { return '<input class="e-' + k + '" type="number" step="any" min="0" inputmode="decimal" value="' + (k === "kcal" ? n0(i[k]) : n1(i[k])) + '" aria-label="' + k + '">'; }).join("") +
-    '<button type="button" class="x" aria-label="Remove item">\u00d7</button></div>';
+function itemRow(i, idx) {
+  var web = (i.source === "web" && i.lastVerified) ? '<div class="eweb">' + verifiedHTML(i) +
+    (i.webSource && i.webSource !== "manual" ? '<button type="button" class="refresh" data-idx="' + idx + '">Refresh</button>' : "") + "</div>" : "";
+  return '<div class="eitem-wrap"><div class="eitem"><input class="e-name" value="' + esc(i.food) + '" aria-label="Item">' +
+    ["kcal", "p", "c", "f"].map(function (k) { return '<input class="e-' + k + '" type="number" step="any" min="0" inputmode="decimal" value="' + (i[k] == null ? "" : (k === "kcal" ? n0(i[k]) : n1(i[k]))) + '" aria-label="' + k + '">'; }).join("") +
+    '<button type="button" class="x" aria-label="Remove item">\u00d7</button></div>' + web + "</div>";
 }
 function renderEditItems(items) {
   $("#e-items").innerHTML = '<div class="ehead"><span>Item</span><span>kcal</span><span>Prot g</span><span>Carb g</span><span>Fat g</span><span></span></div>' + items.map(itemRow).join("");
@@ -560,6 +933,8 @@ function openEditor(id) {
   if (miss) setTimeout(function () { $(".e-kcal", miss).select(); }, 60);
 }
 $("#e-items").addEventListener("click", function (ev) {
+  var refresh = ev.target.closest("button.refresh");
+  if (refresh && editing) { manualRefresh(editingProfileId, editing.id, +refresh.dataset.idx, true); return; }
   if (!ev.target.classList.contains("x")) return;
   var rows = $$("#e-items .eitem"), idx = rows.indexOf(ev.target.closest(".eitem"));
   editing.items = readEditItems(); editing.items.splice(idx, 1); renderEditItems(editing.items);
@@ -567,7 +942,10 @@ $("#e-items").addEventListener("click", function (ev) {
 $("#e-additem").addEventListener("click", function () { editing.items = readEditItems(); editing.items.push({ food: "", kcal: 0, p: 0, c: 0, f: 0, matched: false }); renderEditItems(editing.items); });
 $("#e-reparse").addEventListener("click", function () {
   var b = this; b.disabled = true;
-  enrichOnline(itemsFromText($("#e-text").value)).then(function (r) { editing.items = r.items.map(cleanItem); renderEditItems(editing.items); }).finally(function () { b.disabled = false; });
+  resolveForLog(itemsFromText($("#e-text").value)).then(function (r) {
+    editing.items = r.items.map(function (it) { var c = cleanItem(it); if (!c.micros) c.micros = blankMicros(); return c; });
+    renderEditItems(editing.items);
+  }).catch(function () {}).finally(function () { b.disabled = false; });
 });
 $("#edit-form").addEventListener("submit", function (ev) {
   if (ev.submitter && ev.submitter.value !== "save") { editing = null; return; }
@@ -913,8 +1291,8 @@ function exportBackup() {
     });
     return Promise.all(tasks).then(function (rows) {
       var data = {
-        exportedAt: new Date().toISOString(), app: "Cadence", version: 3,
-        activeProfileId: state.activeProfileId, profiles: rows.filter(Boolean), recipes: state.recipes, settings: state.settings
+        exportedAt: new Date().toISOString(), app: "Cadence", version: 4,
+        activeProfileId: state.activeProfileId, profiles: rows.filter(Boolean), recipes: state.recipes, webFoods: state.webFoods, settings: state.settings
       };
       if (skipped.length) data.omittedProfiles = skipped.map(function (name) {
         var p = state.profiles.filter(function (x) { return x.name === name; })[0];
@@ -940,7 +1318,7 @@ $("#d-file").addEventListener("change", function () {
   rd.readAsText(file); this.value = "";
 });
 $("#d-clear").addEventListener("click", function () {
-  if (!confirm("Delete ALL Cadence data in this browser? Every profile's food log, weights and goals, plus shared recipes, will be erased. Joseph, Cindy and Leo are reset. Cindy will need a new PIN. Export a backup first if you need it.")) return;
+  if (!confirm("Delete ALL Cadence data in this browser? Every profile's food log, weights and goals, plus shared recipes and saved food lookups, will be erased. Joseph, Cindy and Leo are reset. Cindy will need a new PIN. Export a backup first if you need it.")) return;
   sessionKeys = {};
   state = blankV2();
   session.viewId = "joseph";
@@ -952,7 +1330,7 @@ function renderInfo() {
     if (x.lock && x.lock.enabled && !x.lock.pending && !hasKey(x.id)) return x.name + ": locked";
     return x.name + ": " + x.foods.length + " entries";
   });
-  $("#d-info").textContent = bits.join(" \u00b7 ") + " \u00b7 " + state.recipes.length + " shared recipes \u00b7 " + FOODS.length + " foods in the built-in list";
+  $("#d-info").textContent = bits.join(" \u00b7 ") + " \u00b7 " + state.recipes.length + " shared recipes \u00b7 " + state.webFoods.length + " saved lookups \u00b7 " + FOODS.length + " foods in the built-in list";
 }
 function renderLockSettings() {
   var p = current(), el = $("#lock-card-body");
